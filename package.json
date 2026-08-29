@@ -1,9 +1,0 @@
-{
-  "name": "financas-backend",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Backend serverless (Vercel) que conecta o app Caderneta à API da Pluggy para importar gastos do Itaú/Nubank.",
-  "engines": {
-    "node": ">=18"
-  }
-}
