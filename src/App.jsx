@@ -263,7 +263,14 @@ export default function FinancasApp() {
       await loadPluggyScript();
 
       const res = await fetch("/api/connect-token");
-      if (!res.ok) throw new Error("Não consegui gerar o token de conexão.");
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          if (body?.error) detail = body.error;
+        } catch (_) {}
+        throw new Error(`Não consegui gerar o token de conexão (${detail})`);
+      }
       const { accessToken } = await res.json();
 
       const pluggyConnect = new window.PluggyConnect({
@@ -306,7 +313,16 @@ export default function FinancasApp() {
       const res = await fetch(
         `/api/transactions?itemId=${encodeURIComponent(itemId)}&from=${from}&to=${to}`
       );
-      if (!res.ok) throw new Error("Não consegui buscar as transações do banco.");
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          if (body?.error) detail = body.error;
+        } catch (_) {
+          // resposta não era JSON, mantém o status HTTP como detalhe
+        }
+        throw new Error(`Não consegui buscar as transações do banco (${detail})`);
+      }
       const { transactions } = await res.json();
 
       // Evita sugerir de novo transações que já foram importadas antes
