@@ -14,6 +14,7 @@ import {
   Landmark,
   RefreshCw,
   Check,
+  TrendingUp,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -91,6 +92,16 @@ function rebuildCategories(customCategories) {
   INCOME_CATEGORY_LIST = Object.keys(mergedIncome);
 }
 
+// Tipos de lançamento na aba Rendimentos — são conceitualmente diferentes
+// das categorias de gasto/entrada: não têm orçamento nem período de "gasto",
+// só entram na conta de aportes/rendimento/resgates/acumulado.
+const INVESTMENT_TYPE_META = {
+  aporte: { label: "Aporte", icon: "↑", color: TEAL },
+  rendimento: { label: "Rendimento", icon: "★", color: BRASS },
+  resgate: { label: "Resgate", icon: "↓", color: CORAL },
+};
+const INVESTMENT_TYPE_LIST = Object.keys(INVESTMENT_TYPE_META); // ["aporte", "rendimento", "resgate"]
+
 const DEFAULT_BUDGETS = {
   "Assinaturas": 12,
   "Transporte - Carona": 84,
@@ -144,6 +155,7 @@ const LS_KEYS = {
   bankItemId: "caderneta:bankItemId",
   pending: "caderneta:pending",
   customCategories: "caderneta:customCategories",
+  investments: "caderneta:investments",
 };
 
 function lsGet(key) {
@@ -272,8 +284,9 @@ export default function FinancasApp() {
   const [income, setIncome] = useState(() => (lsGet(LS_KEYS.config) || {}).income || 0);
   const [bankItemId, setBankItemId] = useState(() => lsGet(LS_KEYS.bankItemId) || null);
   const [pendingItems, setPendingItems] = useState(() => lsGet(LS_KEYS.pending) || []);
+  const [investments, setInvestments] = useState(() => lsGet(LS_KEYS.investments) || []);
 
-  const [tab, setTab] = useState("home"); // home | history | settings
+  const [tab, setTab] = useState("home"); // home | history | invest | settings
   const [showAdd, setShowAdd] = useState(false);
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
@@ -342,6 +355,24 @@ export default function FinancasApp() {
 
   const deleteExpense = (id) => {
     saveExpenses(expenses.filter((e) => e.id !== id));
+  };
+
+  /* -------------------- rendimentos (aportes/rendimento/resgates) ---- */
+  const saveInvestments = useCallback((next) => {
+    setInvestments(next);
+    if (!lsSet(LS_KEYS.investments, next)) {
+      setError("Não consegui salvar. Tente novamente.");
+    }
+  }, []);
+
+  const addInvestment = (inv) => {
+    const next = [{ ...inv, id: uid() }, ...investments];
+    saveInvestments(next);
+    setShowAdd(false);
+  };
+
+  const deleteInvestment = (id) => {
+    saveInvestments(investments.filter((i) => i.id !== id));
   };
 
   /* -------------------- conexão bancária (Pluggy) -------------------- */
@@ -568,6 +599,47 @@ export default function FinancasApp() {
   // entradas reais importadas do banco no período.
   const remaining = incomePeriod + totalIncomeReal - totalSpent;
 
+  // -------- Rendimentos: aportes / rendimento / resgates / acumulado --------
+  // Início e fim do período visível (mês ou ano), pra filtrar os lançamentos
+  // e também pra saber até que data soma o "acumulado".
+  const periodStart = useMemo(
+    () => (viewMode === "ano" ? new Date(cursor.y, 0, 1) : new Date(cursor.y, cursor.m, 1)),
+    [cursor, viewMode]
+  );
+  const periodEnd = useMemo(
+    () => (viewMode === "ano" ? new Date(cursor.y, 11, 31) : new Date(cursor.y, cursor.m + 1, 0)),
+    [cursor, viewMode]
+  );
+
+  const investmentsInPeriod = useMemo(() => {
+    return investments.filter((inv) => {
+      const d = new Date(inv.date + "T00:00:00");
+      return d >= periodStart && d <= periodEnd;
+    });
+  }, [investments, periodStart, periodEnd]);
+
+  const aportesPeriod = investmentsInPeriod
+    .filter((i) => i.type === "aporte")
+    .reduce((s, i) => s + i.amount, 0);
+  const rendimentoPeriod = investmentsInPeriod
+    .filter((i) => i.type === "rendimento")
+    .reduce((s, i) => s + i.amount, 0);
+  const resgatesPeriod = investmentsInPeriod
+    .filter((i) => i.type === "resgate")
+    .reduce((s, i) => s + i.amount, 0);
+
+  // Acumulado = saldo total investido até o FIM do período visível (não só
+  // o que aconteceu dentro dele) — assim navegar entre meses/anos mostra o
+  // saldo histórico de cada ponto no tempo, como um extrato de verdade.
+  const accumulated = useMemo(() => {
+    return investments
+      .filter((inv) => new Date(inv.date + "T00:00:00") <= periodEnd)
+      .reduce((s, inv) => s + (inv.type === "resgate" ? -inv.amount : inv.amount), 0);
+  }, [investments, periodEnd]);
+
+  // % do salário (renda configurada) que foi investido como aporte no período.
+  const pctInvested = incomePeriod > 0 ? (aportesPeriod / incomePeriod) * 100 : null;
+
   const periodLabel =
     viewMode === "ano" ? `${cursor.y}` : `${MONTHS_PT[cursor.m]} ${cursor.y}`;
 
@@ -654,36 +726,58 @@ export default function FinancasApp() {
           </div>
 
           <div style={{ textAlign: "center", marginTop: 10, marginBottom: 22 }}>
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
-              Total gasto
-            </div>
-            <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
-              {fmtBRL(totalSpent)}
-            </div>
-            {totalIncomeReal > 0 && (
-              <div
-                style={{
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 12,
-                  marginTop: 6,
-                  color: "#9ED0B4",
-                }}
-              >
-                + {fmtBRL(totalIncomeReal)} em entradas
-              </div>
-            )}
-            {(income > 0 || totalIncomeReal > 0) && (
-              <div
-                style={{
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 12,
-                  marginTop: 8,
-                  color: remaining >= 0 ? "#9ED0B4" : "#E3A093",
-                }}
-              >
-                {remaining >= 0 ? "sobram " : "faltam "}
-                {fmtBRL(Math.abs(remaining))}
-              </div>
+            {tab === "invest" ? (
+              <>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
+                  % do salário investido
+                </div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
+                  {pctInvested === null ? "—" : `${pctInvested.toFixed(1)}%`}
+                </div>
+                {pctInvested === null ? (
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
+                    defina sua renda mensal em Config
+                  </div>
+                ) : (
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "#9ED0B4" }}>
+                    {fmtBRL(aportesPeriod)} aportados
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
+                  Total gasto
+                </div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
+                  {fmtBRL(totalSpent)}
+                </div>
+                {totalIncomeReal > 0 && (
+                  <div
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 12,
+                      marginTop: 6,
+                      color: "#9ED0B4",
+                    }}
+                  >
+                    + {fmtBRL(totalIncomeReal)} em entradas
+                  </div>
+                )}
+                {(income > 0 || totalIncomeReal > 0) && (
+                  <div
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 12,
+                      marginTop: 8,
+                      color: remaining >= 0 ? "#9ED0B4" : "#E3A093",
+                    }}
+                  >
+                    {remaining >= 0 ? "sobram " : "faltam "}
+                    {fmtBRL(Math.abs(remaining))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -719,6 +813,17 @@ export default function FinancasApp() {
             <HistoryView expenses={inPeriod} onDelete={deleteExpense} />
           )}
 
+          {tab === "invest" && (
+            <InvestmentsView
+              aportes={aportesPeriod}
+              rendimento={rendimentoPeriod}
+              resgates={resgatesPeriod}
+              accumulated={accumulated}
+              entries={investmentsInPeriod}
+              onDelete={deleteInvestment}
+            />
+          )}
+
           {tab === "settings" && (
             <SettingsView
               budgets={budgets}
@@ -737,7 +842,7 @@ export default function FinancasApp() {
         {/* ---------------- FAB ---------------- */}
         <button
           onClick={() => setShowAdd(true)}
-          aria-label="Adicionar gasto"
+          aria-label={tab === "invest" ? "Adicionar lançamento de rendimento" : "Adicionar gasto"}
           style={{
             position: "fixed",
             bottom: 78,
@@ -775,6 +880,7 @@ export default function FinancasApp() {
           {[
             { id: "home", label: "Início", Icon: HomeIcon },
             { id: "history", label: "Histórico", Icon: ListTree },
+            { id: "invest", label: "Investimentos", Icon: TrendingUp },
             { id: "settings", label: "Config", Icon: SettingsIcon },
           ].map(({ id, label, Icon }) => (
             <button
@@ -799,7 +905,10 @@ export default function FinancasApp() {
           ))}
         </div>
 
-        {showAdd && (
+        {showAdd && tab === "invest" && (
+          <AddInvestmentModal onClose={() => setShowAdd(false)} onAdd={addInvestment} />
+        )}
+        {showAdd && tab !== "invest" && (
           <AddExpenseModal onClose={() => setShowAdd(false)} onAdd={addExpense} />
         )}
 
@@ -1048,6 +1157,109 @@ function HistoryView({ expenses, onDelete }) {
         </div>
       ))}
     </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Investments (Rendimentos) view                                      */
+/* ------------------------------------------------------------------ */
+function InvestmentsView({ aportes, rendimento, resgates, accumulated, entries, onDelete }) {
+  const sorted = [...entries].sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  return (
+    <div>
+      <SectionLabel>Acumulado até o fim do período</SectionLabel>
+      <Card>
+        <div style={{ padding: "16px 14px", textAlign: "center" }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 32 }}>
+            {fmtBRL(accumulated)}
+          </div>
+          <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>
+            soma de todos os aportes + rendimento − resgates até aqui
+          </div>
+        </div>
+      </Card>
+
+      <SectionLabel style={{ marginTop: 22 }}>Neste período</SectionLabel>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <InvestSummaryCard label="Aportes" value={aportes} meta={INVESTMENT_TYPE_META.aporte} />
+        <InvestSummaryCard label="Rendimento" value={rendimento} meta={INVESTMENT_TYPE_META.rendimento} />
+        <InvestSummaryCard label="Resgates" value={resgates} meta={INVESTMENT_TYPE_META.resgate} />
+      </div>
+
+      <SectionLabel>Lançamentos do período</SectionLabel>
+      {sorted.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "30px 10px", color: MUTED, fontSize: 13 }}>
+          Nenhum lançamento de rendimento neste período ainda.
+          <br />
+          Toque no + para registrar um aporte, rendimento ou resgate.
+        </div>
+      ) : (
+        <Card>
+          {sorted.map((inv, i) => {
+            const meta = INVESTMENT_TYPE_META[inv.type] || INVESTMENT_TYPE_META.aporte;
+            const sign = inv.type === "resgate" ? "− " : "+ ";
+            return (
+              <div
+                key={inv.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 14px",
+                  borderBottom: i === sorted.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                }}
+              >
+                <div style={{ fontSize: 16, width: 22, textAlign: "center", color: meta.color }}>
+                  {meta.icon}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>{meta.label}</div>
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                    {new Date(inv.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                    {inv.note ? ` · ${inv.note}` : ""}
+                  </div>
+                </div>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13.5, fontWeight: 600, color: meta.color }}>
+                  {sign}
+                  {fmtBRL(inv.amount)}
+                </div>
+                <button
+                  onClick={() => onDelete(inv.id)}
+                  aria-label="Excluir lançamento"
+                  style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function InvestSummaryCard({ label, value, meta }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        background: "#F5F1E5",
+        border: `1px solid ${PAPER_LINE}`,
+        borderLeft: `3px solid ${meta.color}`,
+        borderRadius: 8,
+        padding: "10px 10px",
+      }}
+    >
+      <div style={{ fontSize: 15, color: meta.color, marginBottom: 4 }}>{meta.icon}</div>
+      <div style={{ fontSize: 10.5, fontFamily: "'IBM Plex Mono', monospace", color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
+        {label}
+      </div>
+      <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 15.5, marginTop: 2 }}>
+        {fmtBRL(value)}
+      </div>
+    </div>
   );
 }
 
@@ -1628,6 +1840,126 @@ function AddExpenseModal({ onClose, onAdd }) {
             marginTop: 6,
             width: "100%",
             background: valid ? TEAL : PAPER_LINE,
+            color: valid ? CREAM_TEXT : MUTED,
+            border: "none",
+            borderRadius: 8,
+            padding: "13px",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Adicionar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Add investment modal — aporte / rendimento / resgate                */
+/* ------------------------------------------------------------------ */
+function AddInvestmentModal({ onClose, onAdd }) {
+  const [type, setType] = useState("aporte");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(todayISO());
+  const [note, setNote] = useState("");
+  const valid = Number(amount) > 0;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(22,35,29,0.55)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        zIndex: 50,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 430,
+          background: PAPER,
+          borderRadius: "16px 16px 0 0",
+          padding: "18px 18px max(18px, env(safe-area-inset-bottom))",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 18 }}>
+            Novo lançamento
+          </span>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <label style={{ ...fieldLabel, marginTop: 0 }}>Tipo</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          {INVESTMENT_TYPE_LIST.map((t) => {
+            const meta = INVESTMENT_TYPE_META[t];
+            const active = type === t;
+            return (
+              <button
+                key={t}
+                onClick={() => setType(t)}
+                style={{
+                  flex: 1,
+                  background: active ? meta.color : "#F5F1E5",
+                  color: active ? CREAM_TEXT : INK,
+                  border: `1px solid ${active ? meta.color : PAPER_LINE}`,
+                  borderRadius: 6,
+                  padding: "8px 4px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                {meta.icon} {meta.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <label style={fieldLabel}>Valor (R$)</label>
+        <input
+          type="number"
+          inputMode="decimal"
+          autoFocus
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0,00"
+          style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace", fontSize: 18 }}
+        />
+
+        <label style={fieldLabel}>Data</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          style={fieldInput}
+        />
+
+        <label style={fieldLabel}>Nota (opcional)</label>
+        <input
+          type="text"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="ex: aporte Tesouro Selic"
+          style={fieldInput}
+        />
+
+        <button
+          disabled={!valid}
+          onClick={() =>
+            onAdd({ type, amount: Number(amount), date, note: note.trim() })
+          }
+          style={{
+            marginTop: 6,
+            width: "100%",
+            background: valid ? INVESTMENT_TYPE_META[type].color : PAPER_LINE,
             color: valid ? CREAM_TEXT : MUTED,
             border: "none",
             borderRadius: 8,
