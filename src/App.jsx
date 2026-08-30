@@ -56,6 +56,16 @@ const BASE_CATEGORY_META = {
 let CATEGORY_META = { ...BASE_CATEGORY_META };
 let CATEGORY_LIST = Object.keys(CATEGORY_META);
 
+// Categorias de entrada (dinheiro chegando) — separadas das categorias de
+// despesa, já que não têm orçamento nem entram no comparativo dia a dia/lazer.
+const INCOME_META = {
+  "Salário": { icon: "$" },
+  "Reembolso": { icon: "↺" },
+  "Pix Recebido": { icon: "↓" },
+  "Outras Entradas": { icon: "+" },
+};
+const INCOME_CATEGORY_LIST = Object.keys(INCOME_META);
+
 /**
  * Recalcula CATEGORY_META/CATEGORY_LIST juntando as categorias fixas do app
  * com as personalizadas que o usuário cadastrou (guardadas à parte, em
@@ -408,9 +418,14 @@ export default function FinancasApp() {
           amount: t.amount,
           description: t.description,
           accountName: t.accountName,
-          category: t.suggestedCategory || CATEGORY_LIST[0],
+          type: t.isExpense ? "expense" : "income",
+          category: t.isExpense
+            ? t.suggestedCategory || CATEGORY_LIST[0]
+            : INCOME_CATEGORY_LIST[0],
           confidence: t.confidence,
-          include: !!t.suggestedCategory,
+          // entradas sempre exigem revisão manual (sem sugestão automática),
+          // então começam desmarcadas por padrão
+          include: t.isExpense ? !!t.suggestedCategory : false,
         }));
 
       // Junta com o que já estava pendente de revisões anteriores — nada
@@ -431,8 +446,9 @@ export default function FinancasApp() {
     const toAdd = finalList
       .filter((c) => c.include)
       .map((c) => ({
+        type: c.type || "expense",
         category: c.category,
-        amount: Number(c.amount),
+        amount: Math.abs(Number(c.amount)),
         date: c.date,
         note: c.description || "",
       }));
@@ -472,6 +488,7 @@ export default function FinancasApp() {
   }, [bankItemId, importTransactions, connectBank]);
 
   /* -------------------- derived data -------------------- */
+  // `inPeriod` traz TUDO (despesas e entradas) — usado no Histórico.
   const inPeriod = useMemo(() => {
     return expenses.filter((e) => {
       const d = new Date(e.date + "T00:00:00");
@@ -479,6 +496,18 @@ export default function FinancasApp() {
       return d.getFullYear() === cursor.y && d.getMonth() === cursor.m;
     });
   }, [expenses, cursor, viewMode]);
+
+  // Registros antigos não tinham campo `type` — tratamos como despesa.
+  const isIncomeRecord = (e) => e.type === "income";
+  const expensesInPeriod = useMemo(
+    () => inPeriod.filter((e) => !isIncomeRecord(e)),
+    [inPeriod]
+  );
+  const incomeInPeriod = useMemo(
+    () => inPeriod.filter((e) => isIncomeRecord(e)),
+    [inPeriod]
+  );
+  const totalIncomeReal = incomeInPeriod.reduce((s, e) => s + e.amount, 0);
 
   const pendingInPeriod = useMemo(() => {
     return pendingItems.filter((p) => {
@@ -489,20 +518,20 @@ export default function FinancasApp() {
   }, [pendingItems, cursor, viewMode]);
   const pendingTotal = pendingInPeriod.reduce((s, p) => s + Math.abs(p.amount), 0);
 
-  const totalSpent = inPeriod.reduce((s, e) => s + e.amount, 0);
+  const totalSpent = expensesInPeriod.reduce((s, e) => s + e.amount, 0);
   const periodMultiplier = viewMode === "ano" ? 12 : 1;
 
   const byCategory = useMemo(() => {
     const map = {};
     CATEGORY_LIST.forEach((c) => (map[c] = 0));
-    inPeriod.forEach((e) => {
+    expensesInPeriod.forEach((e) => {
       map[e.category] = (map[e.category] || 0) + e.amount;
     });
     return map;
-  }, [inPeriod]);
+  }, [expensesInPeriod]);
 
   const fixedCommitted = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo").reduce(
-    (s, c) => s + budgets[c] * periodMultiplier,
+    (s, c) => s + (budgets[c] || 0) * periodMultiplier,
     0
   );
   const fixedSpent = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo").reduce(
@@ -520,7 +549,9 @@ export default function FinancasApp() {
   );
 
   const incomePeriod = income * periodMultiplier;
-  const remaining = incomePeriod - totalSpent;
+  // "Sobra/falta" agora considera tanto a renda mensal configurada quanto as
+  // entradas reais importadas do banco no período.
+  const remaining = incomePeriod + totalIncomeReal - totalSpent;
 
   const periodLabel =
     viewMode === "ano" ? `${cursor.y}` : `${MONTHS_PT[cursor.m]} ${cursor.y}`;
@@ -614,7 +645,19 @@ export default function FinancasApp() {
             <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
               {fmtBRL(totalSpent)}
             </div>
-            {income > 0 && (
+            {totalIncomeReal > 0 && (
+              <div
+                style={{
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: 12,
+                  marginTop: 6,
+                  color: "#9ED0B4",
+                }}
+              >
+                + {fmtBRL(totalIncomeReal)} em entradas
+              </div>
+            )}
+            {(income > 0 || totalIncomeReal > 0) && (
               <div
                 style={{
                   fontFamily: "'IBM Plex Mono', monospace",
@@ -960,7 +1003,7 @@ function HistoryView({ expenses, onDelete }) {
           }}
         >
           <div style={{ fontSize: 16, width: 22, textAlign: "center", color: MUTED }}>
-            {CATEGORY_META[e.category]?.icon || "•"}
+            {e.type === "income" ? INCOME_META[e.category]?.icon || "+" : CATEGORY_META[e.category]?.icon || "•"}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13.5, fontWeight: 500 }}>{e.category}</div>
@@ -969,7 +1012,15 @@ function HistoryView({ expenses, onDelete }) {
               {e.note ? ` · ${e.note}` : ""}
             </div>
           </div>
-          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13.5, fontWeight: 600 }}>
+          <div
+            style={{
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: 13.5,
+              fontWeight: 600,
+              color: e.type === "income" ? TEAL : INK,
+            }}
+          >
+            {e.type === "income" ? "+ " : ""}
             {fmtBRL(e.amount)}
           </div>
           <button
@@ -1303,8 +1354,8 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
 
         <div style={{ fontSize: 11.5, color: MUTED, padding: "0 18px 10px" }}>
           {list.length === 0
-            ? "Nenhum gasto novo encontrado nos últimos 90 dias."
-            : "Confira a categoria sugerida de cada lançamento (baixa confiança = vale conferir com atenção) e desmarque o que não quiser importar."}
+            ? "Nenhum lançamento novo encontrado nos últimos 90 dias."
+            : "Confira a categoria de cada lançamento — despesas já vêm com sugestão quando possível; entradas (salário, PIX recebido, etc.) você categoriza na mão. Desmarque o que não quiser importar."}
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "0 18px" }}>
@@ -1341,8 +1392,36 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{c.description || "(sem descrição)"}</span>
-                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>
+                    {c.description || "(sem descrição)"}
+                    {c.type === "income" && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontSize: 9.5,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
+                          color: TEAL,
+                          border: `1px solid ${TEAL}`,
+                          borderRadius: 4,
+                          padding: "1px 5px",
+                        }}
+                      >
+                        Entrada
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      color: c.type === "income" ? TEAL : INK,
+                    }}
+                  >
+                    {c.type === "income" ? "+ " : ""}
                     {fmtBRL(c.amount)}
                   </span>
                 </div>
@@ -1366,7 +1445,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                     color: INK,
                   }}
                 >
-                  {CATEGORY_LIST.map((cat) => (
+                  {(c.type === "income" ? INCOME_CATEGORY_LIST : CATEGORY_LIST).map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
@@ -1487,7 +1566,7 @@ function AddExpenseModal({ onClose, onAdd }) {
         <button
           disabled={!valid}
           onClick={() =>
-            onAdd({ category, amount: Number(amount), date, note: note.trim() })
+            onAdd({ type: "expense", category, amount: Number(amount), date, note: note.trim() })
           }
           style={{
             marginTop: 6,
