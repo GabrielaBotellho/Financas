@@ -27,15 +27,19 @@ module.exports = async function handler(req, res) {
     for (const account of accounts) {
       const txs = await fetchTransactions(account.id, { from, to });
       for (const tx of txs) {
-        const { suggestedCategory, confidence } = suggestCategory(tx);
+        const isExpense = tx.amount < 0;
+        // Sugestão automática só faz sentido pras regras de despesa —
+        // pra entradas (salário, PIX recebido, etc.) o usuário categoriza
+        // na mão mesmo, então nem tentamos sugerir.
+        const { suggestedCategory, confidence } = isExpense
+          ? suggestCategory(tx)
+          : { suggestedCategory: null, confidence: "nenhuma" };
         all.push({
           id: tx.id,
           date: tx.date,
           description: tx.description,
           amount: Math.abs(tx.amount),
-          // despesa = valor negativo na Pluggy (saída de conta);
-          // ignoramos créditos/entradas por enquanto
-          isExpense: tx.amount < 0,
+          isExpense,
           accountName: account.name,
           suggestedCategory,
           confidence,
@@ -43,10 +47,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // só devolve despesas — entradas (salário, PIX recebido, etc.) ficam de fora por ora
-    const expenses = all.filter((t) => t.isExpense);
-
-    res.status(200).json({ transactions: expenses });
+    res.status(200).json({ transactions: all });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
