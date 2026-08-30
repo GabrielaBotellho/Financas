@@ -45,6 +45,8 @@ const CATEGORY_META = {
   "Uber - Lazer": { group: "variavel", tag: "lazer", icon: "△" },
   "Cartão de Crédito Nubank": { group: "variavel", tag: null, icon: "▪" },
   "Investimentos": { group: "variavel", tag: null, icon: "↗" },
+  "Farmácia": { group: "variavel", tag: null, icon: "✚" },
+  "Médico": { group: "variavel", tag: null, icon: "♥" },
 };
 const CATEGORY_LIST = Object.keys(CATEGORY_META);
 
@@ -63,6 +65,8 @@ const DEFAULT_BUDGETS = {
   "Uber - Lazer": 0,
   "Cartão de Crédito Nubank": 0,
   "Investimentos": 0,
+  "Farmácia": 0,
+  "Médico": 0,
 };
 
 const MONTHS_PT = [
