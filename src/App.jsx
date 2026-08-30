@@ -41,6 +41,8 @@ const CATEGORY_META = {
   "Compras": { group: "variavel", tag: null, icon: "□" },
   "Uber - Dia a Dia": { group: "variavel", tag: "diaadia", icon: "△" },
   "Uber - Lazer": { group: "variavel", tag: "lazer", icon: "△" },
+  "Cartão de Crédito Nubank": { group: "variavel", tag: null, icon: "▪" },
+  "Investimentos": { group: "variavel", tag: null, icon: "↗" },
 };
 const CATEGORY_LIST = Object.keys(CATEGORY_META);
 
@@ -55,6 +57,8 @@ const DEFAULT_BUDGETS = {
   "Compras": 0,
   "Uber - Dia a Dia": 0,
   "Uber - Lazer": 0,
+  "Cartão de Crédito Nubank": 0,
+  "Investimentos": 0,
 };
 
 const MONTHS_PT = [
