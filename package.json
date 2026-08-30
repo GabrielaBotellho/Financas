@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "description": "App de controle financeiro pessoal (Caderneta) com integração Pluggy para Itaú/Nubank.",
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
