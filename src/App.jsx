@@ -58,28 +58,37 @@ let CATEGORY_LIST = Object.keys(CATEGORY_META);
 
 // Categorias de entrada (dinheiro chegando) — separadas das categorias de
 // despesa, já que não têm orçamento nem entram no comparativo dia a dia/lazer.
-const INCOME_META = {
+const BASE_INCOME_META = {
   "Salário": { icon: "$" },
   "Reembolso": { icon: "↺" },
   "Pix Recebido": { icon: "↓" },
   "Outras Entradas": { icon: "+" },
 };
-const INCOME_CATEGORY_LIST = Object.keys(INCOME_META);
+let INCOME_META = { ...BASE_INCOME_META };
+let INCOME_CATEGORY_LIST = Object.keys(INCOME_META);
 
 /**
- * Recalcula CATEGORY_META/CATEGORY_LIST juntando as categorias fixas do app
- * com as personalizadas que o usuário cadastrou (guardadas à parte, em
- * customCategories). Categorias personalizadas sempre entram no grupo
- * "variavel"; o único controle que o usuário tem é se ela conta pro
- * comparativo Dia a dia (`tag: "diaadia"`) ou fica de fora dele (`tag: null`).
+ * Recalcula CATEGORY_META/CATEGORY_LIST e INCOME_META/INCOME_CATEGORY_LIST
+ * juntando as categorias fixas do app com as personalizadas cadastradas
+ * pelo usuário (customCategories). Cada categoria personalizada tem um
+ * `kind`: "expense" (entra em CATEGORY_META, grupo "variavel", com ou sem
+ * a tag "diaadia" conforme o checkbox) ou "income" (entra em INCOME_META,
+ * sem orçamento nem grupo).
  */
 function rebuildCategories(customCategories) {
-  const merged = { ...BASE_CATEGORY_META };
+  const mergedExpense = { ...BASE_CATEGORY_META };
+  const mergedIncome = { ...BASE_INCOME_META };
   customCategories.forEach((c) => {
-    merged[c.name] = { group: "variavel", tag: c.diaDia ? "diaadia" : null, icon: "•" };
+    if (c.kind === "income") {
+      mergedIncome[c.name] = { icon: "+" };
+    } else {
+      mergedExpense[c.name] = { group: "variavel", tag: c.diaDia ? "diaadia" : null, icon: "•" };
+    }
   });
-  CATEGORY_META = merged;
-  CATEGORY_LIST = Object.keys(merged);
+  CATEGORY_META = mergedExpense;
+  CATEGORY_LIST = Object.keys(mergedExpense);
+  INCOME_META = mergedIncome;
+  INCOME_CATEGORY_LIST = Object.keys(mergedIncome);
 }
 
 const DEFAULT_BUDGETS = {
@@ -291,14 +300,20 @@ export default function FinancasApp() {
     }
   }, []);
 
-  const addCustomCategory = (name, diaDia) => {
+  const addCustomCategory = (name, kind, diaDia) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    if (CATEGORY_LIST.some((c) => c.toLowerCase() === trimmed.toLowerCase())) {
+    const exists = [...CATEGORY_LIST, ...INCOME_CATEGORY_LIST].some(
+      (c) => c.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (exists) {
       setError("Essa categoria já existe.");
       return;
     }
-    const next = [...customCategories, { name: trimmed, diaDia: !!diaDia }];
+    const next = [
+      ...customCategories,
+      { name: trimmed, kind: kind === "income" ? "income" : "expense", diaDia: !!diaDia },
+    ];
     setCustomCategories(next);
     lsSet(LS_KEYS.customCategories, next);
   };
@@ -1054,6 +1069,7 @@ function SettingsView({
   const [localIncome, setLocalIncome] = useState(income || "");
   const [saved, setSaved] = useState(false);
   const [newCatName, setNewCatName] = useState("");
+  const [newCatKind, setNewCatKind] = useState("expense"); // "expense" | "income"
   const [newCatDiaDia, setNewCatDiaDia] = useState(false);
 
   // Quando uma categoria personalizada é adicionada/removida, CATEGORY_LIST
@@ -1085,8 +1101,9 @@ function SettingsView({
 
   const handleAddCategory = () => {
     if (!newCatName.trim()) return;
-    onAddCategory(newCatName, newCatDiaDia);
+    onAddCategory(newCatName, newCatKind, newCatDiaDia);
     setNewCatName("");
+    setNewCatKind("expense");
     setNewCatDiaDia(false);
   };
 
@@ -1207,29 +1224,64 @@ function SettingsView({
             style={fieldInput}
           />
 
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginTop: 12,
-              fontSize: 13,
-              color: INK,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={newCatDiaDia}
-              onChange={(e) => setNewCatDiaDia(e.target.checked)}
-              style={{ width: 16, height: 16, accentColor: TEAL }}
-            />
-            Dia a Dia
-          </label>
-          <div style={{ fontSize: 11, color: MUTED, marginTop: 4, marginLeft: 24 }}>
-            Marque se esses gastos devem contar no comparativo "Dia a dia" da
-            tela inicial. Deixe desmarcado pra uma categoria neutra (não entra
-            nem em Dia a dia, nem em Lazer).
+          <label style={fieldLabel}>Tipo</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[
+              { id: "expense", label: "Despesa" },
+              { id: "income", label: "Entrada" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setNewCatKind(opt.id)}
+                style={{
+                  flex: 1,
+                  background: newCatKind === opt.id ? INK : "#F5F1E5",
+                  color: newCatKind === opt.id ? CREAM_TEXT : INK,
+                  border: `1px solid ${newCatKind === opt.id ? INK : PAPER_LINE}`,
+                  borderRadius: 6,
+                  padding: "8px",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
+
+          {newCatKind === "expense" && (
+            <>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginTop: 12,
+                  fontSize: 13,
+                  color: INK,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={newCatDiaDia}
+                  onChange={(e) => setNewCatDiaDia(e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: TEAL }}
+                />
+                Dia a Dia
+              </label>
+              <div style={{ fontSize: 11, color: MUTED, marginTop: 4, marginLeft: 24 }}>
+                Marque se esses gastos devem contar no comparativo "Dia a dia" da
+                tela inicial. Deixe desmarcado pra uma categoria neutra (não entra
+                nem em Dia a dia, nem em Lazer).
+              </div>
+            </>
+          )}
+          {newCatKind === "income" && (
+            <div style={{ fontSize: 11, color: MUTED, marginTop: 10 }}>
+              Categorias de entrada não têm orçamento nem entram no comparativo
+              Dia a dia/Lazer — só ajudam a identificar de onde veio o dinheiro.
+            </div>
+          )}
 
           <button
             onClick={handleAddCategory}
@@ -1267,7 +1319,11 @@ function SettingsView({
                 <div>
                   <div style={{ fontSize: 13 }}>{c.name}</div>
                   <div style={{ fontSize: 10.5, color: MUTED, marginTop: 1 }}>
-                    {c.diaDia ? "Conta em Dia a dia" : "Categoria neutra"}
+                    {c.kind === "income"
+                      ? "Entrada"
+                      : c.diaDia
+                      ? "Despesa · conta em Dia a dia"
+                      : "Despesa · categoria neutra"}
                   </div>
                 </div>
                 <button
