@@ -38,6 +38,8 @@ const CATEGORY_META = {
   "Roupa": { group: "variavel", tag: null, icon: "◇" },
   "Comida Dia a Dia": { group: "variavel", tag: "diaadia", icon: "○" },
   "Comida Lazer": { group: "variavel", tag: "lazer", icon: "○" },
+  "Ifood - Dia a Dia": { group: "variavel", tag: "diaadia", icon: "◎" },
+  "Ifood - Lazer": { group: "variavel", tag: "lazer", icon: "◎" },
   "Compras": { group: "variavel", tag: null, icon: "□" },
   "Uber - Dia a Dia": { group: "variavel", tag: "diaadia", icon: "△" },
   "Uber - Lazer": { group: "variavel", tag: "lazer", icon: "△" },
@@ -54,6 +56,8 @@ const DEFAULT_BUDGETS = {
   "Roupa": 0,
   "Comida Dia a Dia": 0,
   "Comida Lazer": 0,
+  "Ifood - Dia a Dia": 0,
+  "Ifood - Lazer": 0,
   "Compras": 0,
   "Uber - Dia a Dia": 0,
   "Uber - Lazer": 0,
@@ -93,6 +97,7 @@ const LS_KEYS = {
   expenses: "caderneta:expenses",
   config: "caderneta:config",
   bankItemId: "caderneta:bankItemId",
+  pending: "caderneta:pending",
 };
 
 function lsGet(key) {
@@ -213,6 +218,7 @@ export default function FinancasApp() {
   }));
   const [income, setIncome] = useState(() => (lsGet(LS_KEYS.config) || {}).income || 0);
   const [bankItemId, setBankItemId] = useState(() => lsGet(LS_KEYS.bankItemId) || null);
+  const [pendingItems, setPendingItems] = useState(() => lsGet(LS_KEYS.pending) || []);
 
   const [tab, setTab] = useState("home"); // home | history | settings
   const [showAdd, setShowAdd] = useState(false);
@@ -239,6 +245,11 @@ export default function FinancasApp() {
     if (!lsSet(LS_KEYS.config, { budgets: nextBudgets, income: nextIncome })) {
       setError("Não consegui salvar as configurações.");
     }
+  }, []);
+
+  const savePending = useCallback((next) => {
+    setPendingItems(next);
+    lsSet(LS_KEYS.pending, next);
   }, []);
 
   const addExpense = (exp) => {
@@ -334,9 +345,11 @@ export default function FinancasApp() {
       const existingKeys = new Set(
         expenses.map((e) => `${e.date}|${e.amount}|${e.note || ""}`)
       );
+      const alreadyPendingKeys = new Set(pendingItems.map((p) => p.key));
 
-      const candidates = transactions
+      const fresh = transactions
         .filter((t) => !existingKeys.has(`${t.date?.slice(0, 10)}|${t.amount}|${t.description || ""}`))
+        .filter((t) => !alreadyPendingKeys.has(t.id))
         .map((t) => ({
           key: t.id,
           date: (t.date || "").slice(0, 10),
@@ -348,7 +361,11 @@ export default function FinancasApp() {
           include: !!t.suggestedCategory,
         }));
 
-      setImportCandidates(candidates);
+      // Junta com o que já estava pendente de revisões anteriores — nada
+      // se perde se você fechar o app sem revisar tudo de uma vez.
+      const merged = [...pendingItems, ...fresh];
+      savePending(merged);
+      setImportCandidates(merged);
       setBankStatus("reviewing");
     } catch (e) {
       console.error(e);
@@ -356,7 +373,7 @@ export default function FinancasApp() {
       setBankStatus("idle");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expenses]);
+  }, [expenses, pendingItems, savePending]);
 
   const confirmImport = (finalList) => {
     const toAdd = finalList
@@ -368,14 +385,28 @@ export default function FinancasApp() {
         note: c.description || "",
       }));
     addManyExpenses(toAdd);
+
+    // Tudo que passou por essa revisão sai da lista de pendentes — seja
+    // porque virou gasto de verdade, seja porque você desmarcou de propósito.
+    const reviewedKeys = new Set(finalList.map((c) => c.key));
+    savePending(pendingItems.filter((p) => !reviewedKeys.has(p.key)));
+
     setImportCandidates([]);
     setBankStatus("idle");
   };
 
   const cancelImport = () => {
+    // Cancelar só fecha a tela — os itens continuam pendentes pra depois.
     setImportCandidates([]);
     setBankStatus("idle");
   };
+
+  // Abre a revisão direto com o que já está pendente, sem precisar buscar
+  // de novo no banco.
+  const reviewPending = useCallback(() => {
+    setImportCandidates(pendingItems);
+    setBankStatus("reviewing");
+  }, [pendingItems]);
 
   // Itens do Meu Pluggy sincronizam sozinhos uma vez por dia — não faz
   // sentido reabrir o widget de conexão pra "atualizar". Se já tem banco
@@ -396,6 +427,15 @@ export default function FinancasApp() {
       return d.getFullYear() === cursor.y && d.getMonth() === cursor.m;
     });
   }, [expenses, cursor, viewMode]);
+
+  const pendingInPeriod = useMemo(() => {
+    return pendingItems.filter((p) => {
+      const d = new Date(p.date + "T00:00:00");
+      if (viewMode === "ano") return d.getFullYear() === cursor.y;
+      return d.getFullYear() === cursor.y && d.getMonth() === cursor.m;
+    });
+  }, [pendingItems, cursor, viewMode]);
+  const pendingTotal = pendingInPeriod.reduce((s, p) => s + Math.abs(p.amount), 0);
 
   const totalSpent = inPeriod.reduce((s, e) => s + e.amount, 0);
   const periodMultiplier = viewMode === "ano" ? 12 : 1;
@@ -559,6 +599,9 @@ export default function FinancasApp() {
               fixedCommitted={fixedCommitted}
               diaadia={diaadia}
               lazer={lazer}
+              pendingTotal={pendingTotal}
+              pendingCount={pendingInPeriod.length}
+              onReviewPending={reviewPending}
             />
           )}
 
@@ -662,12 +705,41 @@ export default function FinancasApp() {
 /* ------------------------------------------------------------------ */
 /* Home view                                                           */
 /* ------------------------------------------------------------------ */
-function HomeView({ byCategory, budgets, periodMultiplier, fixedSpent, fixedCommitted, diaadia, lazer }) {
+function HomeView({ byCategory, budgets, periodMultiplier, fixedSpent, fixedCommitted, diaadia, lazer, pendingTotal, pendingCount, onReviewPending }) {
   const fixed = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo");
   const variable = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "variavel");
 
   return (
     <div>
+      {pendingCount > 0 && (
+        <button
+          onClick={onReviewPending}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            background: "#F3E7CE",
+            border: `1px solid ${BRASS}`,
+            borderRadius: 8,
+            padding: "12px 14px",
+            marginBottom: 18,
+            textAlign: "left",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: INK }}>
+              {fmtBRL(pendingTotal)} ainda não categorizado{pendingCount > 1 ? "s" : ""}
+            </div>
+            <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+              {pendingCount} lançamento{pendingCount > 1 ? "s" : ""} do banco neste período · toque para revisar
+            </div>
+          </div>
+          <ChevronRight size={18} color={BRASS} />
+        </button>
+      )}
+
       <SectionLabel>Dia a dia × Lazer</SectionLabel>
       <div style={{ display: "flex", gap: 10, marginBottom: 22 }}>
         <SplitCard icon={<Sun size={16} color={TEAL} />} label="Dia a dia" value={diaadia} color={TEAL} />
