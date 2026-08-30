@@ -30,7 +30,7 @@ const CORAL = "#C1503D";
 const MUTED = "#7A705F";
 const CREAM_TEXT = "#EFE9DA";
 
-const CATEGORY_META = {
+const BASE_CATEGORY_META = {
   "Assinaturas": { group: "fixo", tag: null, icon: "♫" },
   "Transporte - Carona": { group: "fixo", tag: null, icon: "→" },
   "Transporte - Ônibus": { group: "fixo", tag: null, icon: "▭" },
@@ -48,7 +48,29 @@ const CATEGORY_META = {
   "Farmácia": { group: "variavel", tag: null, icon: "✚" },
   "Médico": { group: "variavel", tag: null, icon: "♥" },
 };
-const CATEGORY_LIST = Object.keys(CATEGORY_META);
+
+// CATEGORY_META e CATEGORY_LIST começam só com as categorias fixas do app,
+// mas são recalculadas (rebuildCategories) sempre que o usuário adiciona ou
+// remove uma categoria personalizada nas Configurações — por isso são `let`,
+// não `const`.
+let CATEGORY_META = { ...BASE_CATEGORY_META };
+let CATEGORY_LIST = Object.keys(CATEGORY_META);
+
+/**
+ * Recalcula CATEGORY_META/CATEGORY_LIST juntando as categorias fixas do app
+ * com as personalizadas que o usuário cadastrou (guardadas à parte, em
+ * customCategories). Categorias personalizadas sempre entram no grupo
+ * "variavel"; o único controle que o usuário tem é se ela conta pro
+ * comparativo Dia a dia (`tag: "diaadia"`) ou fica de fora dele (`tag: null`).
+ */
+function rebuildCategories(customCategories) {
+  const merged = { ...BASE_CATEGORY_META };
+  customCategories.forEach((c) => {
+    merged[c.name] = { group: "variavel", tag: c.diaDia ? "diaadia" : null, icon: "•" };
+  });
+  CATEGORY_META = merged;
+  CATEGORY_LIST = Object.keys(merged);
+}
 
 const DEFAULT_BUDGETS = {
   "Assinaturas": 12,
@@ -102,6 +124,7 @@ const LS_KEYS = {
   config: "caderneta:config",
   bankItemId: "caderneta:bankItemId",
   pending: "caderneta:pending",
+  customCategories: "caderneta:customCategories",
 };
 
 function lsGet(key) {
@@ -215,6 +238,13 @@ function loadPluggyScript() {
 /* ------------------------------------------------------------------ */
 
 export default function FinancasApp() {
+  const [customCategories, setCustomCategories] = useState(
+    () => lsGet(LS_KEYS.customCategories) || []
+  );
+  // Sempre que o componente renderiza, garante que CATEGORY_META/CATEGORY_LIST
+  // (usadas em todo o app) reflitam as categorias personalizadas atuais.
+  rebuildCategories(customCategories);
+
   const [expenses, setExpenses] = useState(() => lsGet(LS_KEYS.expenses) || []);
   const [budgets, setBudgets] = useState(() => ({
     ...DEFAULT_BUDGETS,
@@ -250,6 +280,24 @@ export default function FinancasApp() {
       setError("Não consegui salvar as configurações.");
     }
   }, []);
+
+  const addCustomCategory = (name, diaDia) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (CATEGORY_LIST.some((c) => c.toLowerCase() === trimmed.toLowerCase())) {
+      setError("Essa categoria já existe.");
+      return;
+    }
+    const next = [...customCategories, { name: trimmed, diaDia: !!diaDia }];
+    setCustomCategories(next);
+    lsSet(LS_KEYS.customCategories, next);
+  };
+
+  const removeCustomCategory = (name) => {
+    const next = customCategories.filter((c) => c.name !== name);
+    setCustomCategories(next);
+    lsSet(LS_KEYS.customCategories, next);
+  };
 
   const savePending = useCallback((next) => {
     setPendingItems(next);
@@ -621,6 +669,9 @@ export default function FinancasApp() {
               bankItemId={bankItemId}
               bankStatus={bankStatus}
               onConnectBank={handleBankAction}
+              customCategories={customCategories}
+              onAddCategory={addCustomCategory}
+              onRemoveCategory={removeCustomCategory}
             />
           )}
         </div>
@@ -757,7 +808,7 @@ function HomeView({ byCategory, budgets, periodMultiplier, fixedSpent, fixedComm
             key={c}
             name={c}
             spent={byCategory[c]}
-            budget={budgets[c] * periodMultiplier}
+            budget={(budgets[c] || 0) * periodMultiplier}
             color={BRASS}
             last={i === fixed.length - 1}
           />
@@ -771,7 +822,7 @@ function HomeView({ byCategory, budgets, periodMultiplier, fixedSpent, fixedComm
             key={c}
             name={c}
             spent={byCategory[c]}
-            budget={budgets[c] * periodMultiplier}
+            budget={(budgets[c] || 0) * periodMultiplier}
             color={TEAL}
             last={i === variable.length - 1}
           />
@@ -937,10 +988,39 @@ function HistoryView({ expenses, onDelete }) {
 /* ------------------------------------------------------------------ */
 /* Settings view                                                       */
 /* ------------------------------------------------------------------ */
-function SettingsView({ budgets, income, onSave, bankItemId, bankStatus, onConnectBank }) {
+function SettingsView({
+  budgets,
+  income,
+  onSave,
+  bankItemId,
+  bankStatus,
+  onConnectBank,
+  customCategories,
+  onAddCategory,
+  onRemoveCategory,
+}) {
   const [localBudgets, setLocalBudgets] = useState(budgets);
   const [localIncome, setLocalIncome] = useState(income || "");
   const [saved, setSaved] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatDiaDia, setNewCatDiaDia] = useState(false);
+
+  // Quando uma categoria personalizada é adicionada/removida, CATEGORY_LIST
+  // muda — garante que o formulário de orçamento tenha uma linha (com 0)
+  // pra qualquer categoria nova, sem perder o que já foi digitado.
+  useEffect(() => {
+    setLocalBudgets((lb) => {
+      let changed = false;
+      const merged = { ...lb };
+      CATEGORY_LIST.forEach((c) => {
+        if (!(c in merged)) {
+          merged[c] = 0;
+          changed = true;
+        }
+      });
+      return changed ? merged : lb;
+    });
+  }, [customCategories]);
 
   const handleSave = () => {
     const cleaned = {};
@@ -950,6 +1030,13 @@ function SettingsView({ budgets, income, onSave, bankItemId, bankStatus, onConne
     onSave(cleaned, Number(localIncome) || 0);
     setSaved(true);
     setTimeout(() => setSaved(false), 1600);
+  };
+
+  const handleAddCategory = () => {
+    if (!newCatName.trim()) return;
+    onAddCategory(newCatName, newCatDiaDia);
+    setNewCatName("");
+    setNewCatDiaDia(false);
   };
 
   const busy = bankStatus === "connecting" || bankStatus === "importing";
@@ -1055,6 +1142,94 @@ function SettingsView({ budgets, income, onSave, bankItemId, bankStatus, onConne
             />
           </div>
         ))}
+      </Card>
+
+      <SectionLabel style={{ marginTop: 22 }}>Nova categoria</SectionLabel>
+      <Card>
+        <div style={{ padding: "14px" }}>
+          <label style={{ ...fieldLabel, marginTop: 0 }}>Nome</label>
+          <input
+            type="text"
+            value={newCatName}
+            onChange={(e) => setNewCatName(e.target.value)}
+            placeholder="ex: Pet, Presentes, Casa"
+            style={fieldInput}
+          />
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginTop: 12,
+              fontSize: 13,
+              color: INK,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={newCatDiaDia}
+              onChange={(e) => setNewCatDiaDia(e.target.checked)}
+              style={{ width: 16, height: 16, accentColor: TEAL }}
+            />
+            Dia a Dia
+          </label>
+          <div style={{ fontSize: 11, color: MUTED, marginTop: 4, marginLeft: 24 }}>
+            Marque se esses gastos devem contar no comparativo "Dia a dia" da
+            tela inicial. Deixe desmarcado pra uma categoria neutra (não entra
+            nem em Dia a dia, nem em Lazer).
+          </div>
+
+          <button
+            onClick={handleAddCategory}
+            disabled={!newCatName.trim()}
+            style={{
+              marginTop: 14,
+              width: "100%",
+              background: newCatName.trim() ? TEAL : PAPER_LINE,
+              color: newCatName.trim() ? CREAM_TEXT : MUTED,
+              border: "none",
+              borderRadius: 8,
+              padding: "11px",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            Adicionar categoria
+          </button>
+        </div>
+
+        {customCategories.length > 0 && (
+          <div style={{ borderTop: `1px solid ${PAPER_LINE}` }}>
+            {customCategories.map((c, i) => (
+              <div
+                key={c.name}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: i === customCategories.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 13 }}>{c.name}</div>
+                  <div style={{ fontSize: 10.5, color: MUTED, marginTop: 1 }}>
+                    {c.diaDia ? "Conta em Dia a dia" : "Categoria neutra"}
+                  </div>
+                </div>
+                <button
+                  onClick={() => onRemoveCategory(c.name)}
+                  aria-label={`Remover categoria ${c.name}`}
+                  style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <button
