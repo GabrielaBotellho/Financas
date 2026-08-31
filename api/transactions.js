@@ -28,12 +28,21 @@ module.exports = async function handler(req, res) {
       const txs = await fetchTransactions(account.id, { from, to });
       for (const tx of txs) {
         const isExpense = tx.amount < 0;
-        // Sugestão automática só faz sentido pras regras de despesa —
-        // pra entradas (salário, PIX recebido, etc.) o usuário categoriza
-        // na mão mesmo, então nem tentamos sugerir.
-        const { suggestedCategory, confidence } = isExpense
-          ? suggestCategory(tx)
-          : { suggestedCategory: null, confidence: "nenhuma" };
+        // Sugestão automática de categoria de despesa só vale pra saídas —
+        // pra entradas (salário, PIX recebido, etc.) o usuário categoriza na
+        // mão, EXCETO no caso específico de "Investimentos": um resgate que
+        // volta pra conta é uma entrada, mas ainda assim queremos detectar
+        // e mandar pra aba de Investimentos automaticamente.
+        const raw = suggestCategory(tx);
+        let suggestedCategory = null;
+        let confidence = "nenhuma";
+        if (isExpense) {
+          suggestedCategory = raw.suggestedCategory;
+          confidence = raw.confidence;
+        } else if (raw.suggestedCategory === "Investimentos") {
+          suggestedCategory = raw.suggestedCategory;
+          confidence = raw.confidence;
+        }
         all.push({
           id: tx.id,
           date: tx.date,
