@@ -1400,9 +1400,14 @@ function CreditCardsView({
   const effectiveBill = bills.find((b) => b.id === effectiveBillId) || null;
 
   const billTransactions = selectedCard
-    ? selectedCard.transactions.filter((tx) =>
-        effectiveBillId ? tx.billId === effectiveBillId : !tx.billId
-      )
+    ? bills.length > 0
+      ? selectedCard.transactions.filter((tx) =>
+          effectiveBillId ? tx.billId === effectiveBillId : !tx.billId
+        )
+      : // Sem dados de fatura (endpoint falhou ou instituição não retorna
+        // esse produto) — mostra todas as transações da conta mesmo assim,
+        // sem agrupar por fatura.
+        selectedCard.transactions
     : [];
 
   if (!bankItemId) {
@@ -1496,6 +1501,22 @@ function CreditCardsView({
               </div>
             </div>
           </Card>
+
+          {bills.length === 0 && selectedCard.billsError && (
+            <div
+              style={{
+                background: "#F3D9D3",
+                color: CORAL,
+                fontSize: 11.5,
+                padding: "8px 10px",
+                borderRadius: 6,
+                marginTop: 12,
+                marginBottom: 4,
+              }}
+            >
+              Não consegui separar por fatura nesse cartão ({selectedCard.billsError}) — mostrando todos os lançamentos juntos abaixo.
+            </div>
+          )}
 
           {bills.length > 0 && (
             <>
