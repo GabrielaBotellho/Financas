@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Check,
   TrendingUp,
+  CreditCard,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -154,6 +155,7 @@ const LS_KEYS = {
   pending: "caderneta:pending",
   customCategories: "caderneta:customCategories",
   investments: "caderneta:investments",
+  creditCards: "caderneta:creditCards",
 };
 
 function lsGet(key) {
@@ -283,6 +285,10 @@ export default function FinancasApp() {
   const [bankItemId, setBankItemId] = useState(() => lsGet(LS_KEYS.bankItemId) || null);
   const [pendingItems, setPendingItems] = useState(() => lsGet(LS_KEYS.pending) || []);
   const [investments, setInvestments] = useState(() => lsGet(LS_KEYS.investments) || []);
+  const [creditCards, setCreditCards] = useState(() => lsGet(LS_KEYS.creditCards) || []);
+  const [ccStatus, setCcStatus] = useState("idle"); // idle | loading
+  const [selectedCardId, setSelectedCardId] = useState(null);
+  const [selectedBillId, setSelectedBillId] = useState(null);
 
   const [tab, setTab] = useState("home"); // home | history | invest | settings
   const [showAdd, setShowAdd] = useState(false);
@@ -377,6 +383,33 @@ export default function FinancasApp() {
   const deleteInvestment = (id) => {
     saveInvestments(investments.filter((i) => i.id !== id));
   };
+
+  /* -------------------- cartão de crédito (faturas) ------------------- */
+  const fetchCreditCards = useCallback(async () => {
+    if (!bankItemId) return;
+    setCcStatus("loading");
+    setError("");
+    try {
+      const res = await fetch(`/api/credit-cards?itemId=${encodeURIComponent(bankItemId)}`);
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          if (body?.error) detail = body.error;
+        } catch (_) {}
+        throw new Error(`Não consegui buscar os cartões de crédito (${detail})`);
+      }
+      const { cards } = await res.json();
+      setCreditCards(cards);
+      lsSet(LS_KEYS.creditCards, cards);
+      if (cards.length > 0) setSelectedCardId((id) => id || cards[0].id);
+    } catch (e) {
+      console.error(e);
+      setError(e.message || "Não consegui buscar os cartões de crédito.");
+    } finally {
+      setCcStatus("idle");
+    }
+  }, [bankItemId]);
 
   /* -------------------- conexão bancária (Pluggy) -------------------- */
   // Usada só na primeira conexão. Itens do Meu Pluggy sincronizam sozinhos
@@ -685,6 +718,11 @@ export default function FinancasApp() {
   // % do salário (renda configurada) que foi investido como aporte no período.
   const pctInvested = incomePeriod > 0 ? (aportesPeriod / incomePeriod) * 100 : null;
 
+  // -------- Cartão de crédito --------
+  const selectedCard = creditCards.find((c) => c.id === selectedCardId) || creditCards[0] || null;
+  // `bills` já vem ordenada do backend da mais recente pra mais antiga.
+  const openBill = selectedCard?.bills?.[0] || null;
+
   const periodLabel =
     viewMode === "ano" ? `${cursor.y}` : `${MONTHS_PT[cursor.m]} ${cursor.y}`;
 
@@ -771,7 +809,25 @@ export default function FinancasApp() {
           </div>
 
           <div style={{ textAlign: "center", marginTop: 10, marginBottom: 22 }}>
-            {tab === "invest" ? (
+            {tab === "card" ? (
+              <>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
+                  {selectedCard ? `Fatura · ${selectedCard.name}` : "Fatura atual"}
+                </div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
+                  {fmtBRL(openBill?.totalAmount ?? selectedCard?.balance ?? 0)}
+                </div>
+                {openBill?.dueDate ? (
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
+                    vence em {new Date(openBill.dueDate).toLocaleDateString("pt-BR")}
+                  </div>
+                ) : creditCards.length === 0 ? (
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
+                    toque em "Buscar faturas" abaixo
+                  </div>
+                ) : null}
+              </>
+            ) : tab === "invest" ? (
               <>
                 <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
                   % do salário investido
@@ -869,6 +925,19 @@ export default function FinancasApp() {
             />
           )}
 
+          {tab === "card" && (
+            <CreditCardsView
+              bankItemId={bankItemId}
+              cards={creditCards}
+              status={ccStatus}
+              onFetch={fetchCreditCards}
+              selectedCardId={selectedCardId}
+              onSelectCard={setSelectedCardId}
+              selectedBillId={selectedBillId}
+              onSelectBill={setSelectedBillId}
+            />
+          )}
+
           {tab === "settings" && (
             <SettingsView
               budgets={budgets}
@@ -885,29 +954,31 @@ export default function FinancasApp() {
         </div>
 
         {/* ---------------- FAB ---------------- */}
-        <button
-          onClick={() => setShowAdd(true)}
-          aria-label={tab === "invest" ? "Adicionar lançamento de rendimento" : "Adicionar gasto"}
-          style={{
-            position: "fixed",
-            bottom: 78,
-            left: "50%",
-            transform: "translateX(-50%)",
-            maxWidth: 430,
-            width: 56,
-            height: 56,
-            borderRadius: "50%",
-            background: TEAL,
-            color: CREAM_TEXT,
-            border: `3px solid ${PAPER}`,
-            boxShadow: "0 4px 14px rgba(22,35,29,0.35)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Plus size={26} />
-        </button>
+        {tab !== "card" && (
+          <button
+            onClick={() => setShowAdd(true)}
+            aria-label={tab === "invest" ? "Adicionar lançamento de rendimento" : "Adicionar gasto"}
+            style={{
+              position: "fixed",
+              bottom: 78,
+              left: "50%",
+              transform: "translateX(-50%)",
+              maxWidth: 430,
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: TEAL,
+              color: CREAM_TEXT,
+              border: `3px solid ${PAPER}`,
+              boxShadow: "0 4px 14px rgba(22,35,29,0.35)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Plus size={26} />
+          </button>
+        )}
 
         {/* ---------------- BOTTOM NAV ---------------- */}
         <div
@@ -926,6 +997,7 @@ export default function FinancasApp() {
             { id: "home", label: "Início", Icon: HomeIcon },
             { id: "history", label: "Histórico", Icon: ListTree },
             { id: "invest", label: "Investimentos", Icon: TrendingUp },
+            { id: "card", label: "Cartão", Icon: CreditCard },
             { id: "settings", label: "Config", Icon: SettingsIcon },
           ].map(({ id, label, Icon }) => (
             <button
@@ -1304,6 +1376,198 @@ function InvestSummaryCard({ label, value, meta }) {
       <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 15.5, marginTop: 2 }}>
         {fmtBRL(value)}
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Credit card (Cartão de Crédito) view                                */
+/* ------------------------------------------------------------------ */
+function CreditCardsView({
+  bankItemId,
+  cards,
+  status,
+  onFetch,
+  selectedCardId,
+  onSelectCard,
+  selectedBillId,
+  onSelectBill,
+}) {
+  const loading = status === "loading";
+  const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
+  const bills = selectedCard?.bills || [];
+  const effectiveBillId = selectedBillId || bills[0]?.id || null;
+  const effectiveBill = bills.find((b) => b.id === effectiveBillId) || null;
+
+  const billTransactions = selectedCard
+    ? selectedCard.transactions.filter((tx) =>
+        effectiveBillId ? tx.billId === effectiveBillId : !tx.billId
+      )
+    : [];
+
+  if (!bankItemId) {
+    return (
+      <div style={{ textAlign: "center", padding: "40px 10px", color: MUTED, fontSize: 13 }}>
+        Conecte seu banco em Config primeiro — a leitura de faturas usa a
+        mesma conexão do Meu Pluggy.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        onClick={onFetch}
+        disabled={loading}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          background: cards.length > 0 ? "#F5F1E5" : TEAL,
+          color: cards.length > 0 ? INK : CREAM_TEXT,
+          border: cards.length > 0 ? `1px solid ${PAPER_LINE}` : "none",
+          borderRadius: 8,
+          padding: "11px",
+          fontSize: 13,
+          fontWeight: 600,
+          marginBottom: 18,
+          opacity: loading ? 0.6 : 1,
+        }}
+      >
+        {loading ? "Buscando faturas…" : cards.length > 0 ? "Atualizar faturas" : "Buscar faturas"}
+      </button>
+
+      {cards.length === 0 && !loading && (
+        <div style={{ textAlign: "center", padding: "20px 10px", color: MUTED, fontSize: 13 }}>
+          Nenhum cartão carregado ainda. Toque em "Buscar faturas" — isso
+          consulta o Itaú e o Nubank conectados via Meu Pluggy.
+        </div>
+      )}
+
+      {cards.length > 1 && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
+          {cards.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => {
+                onSelectCard(c.id);
+                onSelectBill(null);
+              }}
+              style={{
+                flexShrink: 0,
+                background: selectedCard?.id === c.id ? INK : "#F5F1E5",
+                color: selectedCard?.id === c.id ? CREAM_TEXT : INK,
+                border: `1px solid ${selectedCard?.id === c.id ? INK : PAPER_LINE}`,
+                borderRadius: 20,
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectedCard && (
+        <>
+          <SectionLabel>Limite</SectionLabel>
+          <Card>
+            <div style={{ padding: "14px", display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Disponível
+                </div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2 }}>
+                  {selectedCard.availableCreditLimit != null ? fmtBRL(selectedCard.availableCreditLimit) : "—"}
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Limite total
+                </div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2 }}>
+                  {selectedCard.creditLimit != null ? fmtBRL(selectedCard.creditLimit) : "—"}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {bills.length > 0 && (
+            <>
+              <SectionLabel style={{ marginTop: 22 }}>Faturas</SectionLabel>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
+                {bills.map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => onSelectBill(b.id)}
+                    style={{
+                      flexShrink: 0,
+                      background: effectiveBillId === b.id ? BRASS : "#F5F1E5",
+                      color: effectiveBillId === b.id ? INK : INK,
+                      border: `1px solid ${effectiveBillId === b.id ? BRASS : PAPER_LINE}`,
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      fontSize: 11.5,
+                      textAlign: "left",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600 }}>
+                      {new Date(b.dueDate).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" })}
+                    </div>
+                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", marginTop: 1 }}>
+                      {fmtBRL(b.totalAmount)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          <SectionLabel>
+            {effectiveBill
+              ? `Lançamentos · vence ${new Date(effectiveBill.dueDate).toLocaleDateString("pt-BR")}`
+              : "Lançamentos recentes (fatura em aberto)"}
+          </SectionLabel>
+          {billTransactions.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "20px 10px", color: MUTED, fontSize: 13 }}>
+              Nenhum lançamento encontrado nessa fatura.
+            </div>
+          ) : (
+            <Card>
+              {billTransactions.map((tx, i) => (
+                <div
+                  key={tx.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "12px 14px",
+                    borderBottom: i === billTransactions.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>{tx.description || "(sem descrição)"}</div>
+                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                      {new Date(tx.date).toLocaleDateString("pt-BR")}
+                      {tx.installmentNumber && tx.totalInstallments
+                        ? ` · parcela ${tx.installmentNumber}/${tx.totalInstallments}`
+                        : ""}
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13.5, fontWeight: 600 }}>
+                    {fmtBRL(Math.abs(tx.amount))}
+                  </div>
+                </div>
+              ))}
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }
