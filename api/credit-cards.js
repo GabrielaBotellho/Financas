@@ -28,12 +28,15 @@ module.exports = async function handler(req, res) {
       const cd = account.creditData || {};
 
       let bills = [];
+      let billsError = null;
       try {
         bills = await fetchBills(account.id);
       } catch (err) {
         // Nem toda instituição retorna faturas via Open Finance Direct —
-        // se falhar, seguimos só com as transações da conta.
+        // se falhar, seguimos só com as transações da conta, mas avisamos
+        // o front-end do motivo (em vez de simplesmente sumir com o erro).
         console.error(`Falha ao buscar faturas da conta ${account.id}:`, err.message);
+        billsError = err.message;
       }
 
       // Cartão de crédito guarda ~12 meses de histórico na Pluggy; não
@@ -52,6 +55,7 @@ module.exports = async function handler(req, res) {
         minimumPayment: cd.minimumPayment ?? null,
         balanceCloseDate: cd.balanceCloseDate || null,
         balanceDueDate: cd.balanceDueDate || null,
+        billsError,
         bills: bills
           .map((b) => ({
             id: b.id,
