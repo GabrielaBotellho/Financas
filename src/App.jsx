@@ -45,7 +45,6 @@ const BASE_CATEGORY_META = {
   "Uber - Dia a Dia": { group: "variavel", tag: "diaadia", icon: "△" },
   "Uber - Lazer": { group: "variavel", tag: "lazer", icon: "△" },
   "Cartão de Crédito Nubank": { group: "variavel", tag: null, icon: "▪" },
-  "Investimentos": { group: "variavel", tag: null, icon: "↗" },
   "Farmácia": { group: "variavel", tag: null, icon: "✚" },
   "Médico": { group: "variavel", tag: null, icon: "♥" },
 };
@@ -116,7 +115,6 @@ const DEFAULT_BUDGETS = {
   "Uber - Dia a Dia": 0,
   "Uber - Lazer": 0,
   "Cartão de Crédito Nubank": 0,
-  "Investimentos": 0,
   "Farmácia": 0,
   "Médico": 0,
 };
@@ -371,6 +369,11 @@ export default function FinancasApp() {
     setShowAdd(false);
   };
 
+  const addManyInvestments = (list) => {
+    const withIds = list.map((i) => ({ ...i, id: uid() }));
+    saveInvestments([...withIds, ...investments]);
+  };
+
   const deleteInvestment = (id) => {
     saveInvestments(investments.filter((i) => i.id !== id));
   };
@@ -449,30 +452,59 @@ export default function FinancasApp() {
       const { transactions } = await res.json();
 
       // Evita sugerir de novo transações que já foram importadas antes
-      // (heurística simples: mesma data + mesmo valor + mesma descrição)
+      // (heurística simples: mesma data + mesmo valor + mesma descrição).
+      // Despesas/entradas normais são comparadas contra `expenses`; itens de
+      // investimento (aporte/resgate) são comparados contra `investments`,
+      // já que vivem em listas separadas.
       const existingKeys = new Set(
         expenses.map((e) => `${e.date}|${e.amount}|${e.note || ""}`)
+      );
+      const existingInvestmentKeys = new Set(
+        investments.map((i) => `${i.date}|${i.amount}|${i.note || ""}`)
       );
       const alreadyPendingKeys = new Set(pendingItems.map((p) => p.key));
 
       const fresh = transactions
-        .filter((t) => !existingKeys.has(`${t.date?.slice(0, 10)}|${t.amount}|${t.description || ""}`))
         .filter((t) => !alreadyPendingKeys.has(t.id))
-        .map((t) => ({
-          key: t.id,
-          date: (t.date || "").slice(0, 10),
-          amount: t.amount,
-          description: t.description,
-          accountName: t.accountName,
-          type: t.isExpense ? "expense" : "income",
-          category: t.isExpense
-            ? t.suggestedCategory || CATEGORY_LIST[0]
-            : INCOME_CATEGORY_LIST[0],
-          confidence: t.confidence,
-          // entradas sempre exigem revisão manual (sem sugestão automática),
-          // então começam desmarcadas por padrão
-          include: t.isExpense ? !!t.suggestedCategory : false,
-        }));
+        .filter((t) => {
+          const key = `${t.date?.slice(0, 10)}|${t.amount}|${t.description || ""}`;
+          const isInvestment = t.suggestedCategory === "Investimentos";
+          return isInvestment ? !existingInvestmentKeys.has(key) : !existingKeys.has(key);
+        })
+        .map((t) => {
+          // "Investimentos" é um caso especial: nem despesa nem entrada
+          // comuns — o lançamento inteiro vai direto pra aba Investimentos
+          // (aporte se saiu da conta, resgate se voltou), e por isso NUNCA
+          // conta nos totais da tela inicial.
+          if (t.suggestedCategory === "Investimentos") {
+            return {
+              key: t.id,
+              date: (t.date || "").slice(0, 10),
+              amount: t.amount,
+              description: t.description,
+              accountName: t.accountName,
+              type: "investment",
+              investType: t.isExpense ? "aporte" : "resgate",
+              confidence: t.confidence,
+              include: true,
+            };
+          }
+          return {
+            key: t.id,
+            date: (t.date || "").slice(0, 10),
+            amount: t.amount,
+            description: t.description,
+            accountName: t.accountName,
+            type: t.isExpense ? "expense" : "income",
+            category: t.isExpense
+              ? t.suggestedCategory || CATEGORY_LIST[0]
+              : INCOME_CATEGORY_LIST[0],
+            confidence: t.confidence,
+            // entradas sempre exigem revisão manual (sem sugestão automática),
+            // então começam desmarcadas por padrão
+            include: t.isExpense ? !!t.suggestedCategory : false,
+          };
+        });
 
       // Junta com o que já estava pendente de revisões anteriores — nada
       // se perde se você fechar o app sem revisar tudo de uma vez.
@@ -486,11 +518,13 @@ export default function FinancasApp() {
       setBankStatus("idle");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expenses, pendingItems, savePending]);
+  }, [expenses, investments, pendingItems, savePending]);
 
   const confirmImport = (finalList) => {
-    const toAdd = finalList
-      .filter((c) => c.include)
+    const included = finalList.filter((c) => c.include);
+
+    const normalToAdd = included
+      .filter((c) => c.type !== "investment")
       .map((c) => ({
         type: c.type || "expense",
         category: c.category,
@@ -498,10 +532,21 @@ export default function FinancasApp() {
         date: c.date,
         note: c.description || "",
       }));
-    addManyExpenses(toAdd);
+    if (normalToAdd.length > 0) addManyExpenses(normalToAdd);
+
+    const investmentToAdd = included
+      .filter((c) => c.type === "investment")
+      .map((c) => ({
+        type: c.investType,
+        amount: Math.abs(Number(c.amount)),
+        date: c.date,
+        note: c.description || "",
+      }));
+    if (investmentToAdd.length > 0) addManyInvestments(investmentToAdd);
 
     // Tudo que passou por essa revisão sai da lista de pendentes — seja
-    // porque virou gasto de verdade, seja porque você desmarcou de propósito.
+    // porque virou gasto/investimento de verdade, seja porque você
+    // desmarcou de propósito.
     const reviewedKeys = new Set(finalList.map((c) => c.key));
     savePending(pendingItems.filter((p) => !reviewedKeys.has(p.key)));
 
@@ -1585,6 +1630,9 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
   const setCategory = (key, category) => {
     setList((l) => l.map((c) => (c.key === key ? { ...c, category } : c)));
   };
+  const setInvestType = (key, investType) => {
+    setList((l) => l.map((c) => (c.key === key ? { ...c, investType } : c)));
+  };
 
   const includedCount = list.filter((c) => c.include).length;
 
@@ -1623,7 +1671,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
         <div style={{ fontSize: 11.5, color: MUTED, padding: "0 18px 10px" }}>
           {list.length === 0
             ? "Nenhum lançamento novo encontrado nos últimos 90 dias."
-            : "Confira a categoria de cada lançamento — despesas já vêm com sugestão quando possível; entradas (salário, PIX recebido, etc.) você categoriza na mão. Desmarque o que não quiser importar."}
+            : "Confira a categoria de cada lançamento — despesas já vêm com sugestão quando possível; entradas comuns (salário, PIX recebido) você categoriza na mão; lançamentos de investimento (aporte/resgate) vão direto pra aba Investimentos, fora dos totais da tela inicial. Desmarque o que não quiser importar."}
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "0 18px" }}>
@@ -1679,6 +1727,23 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                         Entrada
                       </span>
                     )}
+                    {c.type === "investment" && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontSize: 9.5,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
+                          color: BRASS,
+                          border: `1px solid ${BRASS}`,
+                          borderRadius: 4,
+                          padding: "1px 5px",
+                        }}
+                      >
+                        Investimento
+                      </span>
+                    )}
                   </span>
                   <span
                     style={{
@@ -1686,10 +1751,10 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                       fontSize: 13,
                       fontWeight: 600,
                       whiteSpace: "nowrap",
-                      color: c.type === "income" ? TEAL : INK,
+                      color: c.type === "income" ? TEAL : c.type === "investment" ? INVESTMENT_TYPE_META[c.investType].color : INK,
                     }}
                   >
-                    {c.type === "income" ? "+ " : ""}
+                    {c.type === "income" ? "+ " : c.type === "investment" && c.investType === "resgate" ? "+ " : ""}
                     {fmtBRL(c.amount)}
                   </span>
                 </div>
@@ -1698,25 +1763,47 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                   {c.accountName ? ` · ${c.accountName}` : ""}
                   {c.confidence && c.confidence !== "nenhuma" ? ` · confiança ${c.confidence}` : ""}
                 </div>
-                <select
-                  value={c.category}
-                  onChange={(e) => setCategory(c.key, e.target.value)}
-                  disabled={!c.include}
-                  style={{
-                    marginTop: 6,
-                    width: "100%",
-                    border: `1px solid ${PAPER_LINE}`,
-                    borderRadius: 6,
-                    padding: "6px 8px",
-                    fontSize: 12.5,
-                    background: "#F5F1E5",
-                    color: INK,
-                  }}
-                >
-                  {(c.type === "income" ? INCOME_CATEGORY_LIST : CATEGORY_LIST).map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
+                {c.type === "investment" ? (
+                  <select
+                    value={c.investType}
+                    onChange={(e) => setInvestType(c.key, e.target.value)}
+                    disabled={!c.include}
+                    style={{
+                      marginTop: 6,
+                      width: "100%",
+                      border: `1px solid ${PAPER_LINE}`,
+                      borderRadius: 6,
+                      padding: "6px 8px",
+                      fontSize: 12.5,
+                      background: "#F5F1E5",
+                      color: INK,
+                    }}
+                  >
+                    {INVESTMENT_TYPE_LIST.map((t) => (
+                      <option key={t} value={t}>{INVESTMENT_TYPE_META[t].label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    value={c.category}
+                    onChange={(e) => setCategory(c.key, e.target.value)}
+                    disabled={!c.include}
+                    style={{
+                      marginTop: 6,
+                      width: "100%",
+                      border: `1px solid ${PAPER_LINE}`,
+                      borderRadius: 6,
+                      padding: "6px 8px",
+                      fontSize: 12.5,
+                      background: "#F5F1E5",
+                      color: INK,
+                    }}
+                  >
+                    {(c.type === "income" ? INCOME_CATEGORY_LIST : CATEGORY_LIST).map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
           ))}
