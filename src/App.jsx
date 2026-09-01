@@ -1398,17 +1398,30 @@ function CreditCardsView({
   const bills = selectedCard?.bills || [];
   const effectiveBillId = selectedBillId || bills[0]?.id || null;
   const effectiveBill = bills.find((b) => b.id === effectiveBillId) || null;
+  const isMostRecentBill = bills.length > 0 && bills[0]?.id === effectiveBillId;
 
-  const billTransactions = selectedCard
-    ? bills.length > 0
-      ? selectedCard.transactions.filter((tx) =>
-          effectiveBillId ? tx.billId === effectiveBillId : !tx.billId
-        )
-      : // Sem dados de fatura (endpoint falhou ou instituição não retorna
-        // esse produto) — mostra todas as transações da conta mesmo assim,
-        // sem agrupar por fatura.
-        selectedCard.transactions
-    : [];
+  let billTransactions = [];
+  let showingUnbilledFallback = false;
+  if (selectedCard) {
+    if (bills.length === 0) {
+      // Sem dados de fatura (endpoint falhou ou instituição não retorna
+      // esse produto) — mostra todas as transações da conta mesmo assim,
+      // sem agrupar por fatura.
+      billTransactions = selectedCard.transactions;
+    } else {
+      const matched = selectedCard.transactions.filter((tx) => tx.billId === effectiveBillId);
+      if (matched.length === 0 && isMostRecentBill) {
+        // A fatura mais recente costuma estar "em aberto" — as compras
+        // feitas nela ainda não ganharam o vínculo (billId) até ela
+        // fechar de vez. Nesse caso, mostramos as compras ainda soltas
+        // (sem fatura vinculada) como aproximação do que está nela.
+        billTransactions = selectedCard.transactions.filter((tx) => !tx.billId);
+        showingUnbilledFallback = billTransactions.length > 0;
+      } else {
+        billTransactions = matched;
+      }
+    }
+  }
 
   if (!bankItemId) {
     return (
@@ -1554,9 +1567,17 @@ function CreditCardsView({
               ? `Lançamentos · vence ${new Date(effectiveBill.dueDate).toLocaleDateString("pt-BR")}`
               : "Lançamentos recentes (fatura em aberto)"}
           </SectionLabel>
+          {showingUnbilledFallback && (
+            <div style={{ fontSize: 11, color: MUTED, marginBottom: 8, marginTop: -4 }}>
+              Essa fatura ainda está em aberto — mostrando as compras mais
+              recentes que ainda não fecharam em nenhuma fatura.
+            </div>
+          )}
           {billTransactions.length === 0 ? (
             <div style={{ textAlign: "center", padding: "20px 10px", color: MUTED, fontSize: 13 }}>
-              Nenhum lançamento encontrado nessa fatura.
+              {isMostRecentBill
+                ? "Nenhum lançamento encontrado — nem na fatura nem em compras soltas ainda não fechadas."
+                : "Nenhum lançamento encontrado nessa fatura."}
             </div>
           ) : (
             <Card>
