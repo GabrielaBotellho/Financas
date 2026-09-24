@@ -1553,8 +1553,10 @@ function CreditCardsView({
       )}
 
       {cards.length > 1 && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
-          {cards.map((c) => (
+        <>
+          <SectionLabel>Cartão</SectionLabel>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
+            {cards.map((c) => (
             <button
               key={c.id}
               onClick={() => {
@@ -1575,8 +1577,9 @@ function CreditCardsView({
             >
               {c.name}
             </button>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
 
       {selectedCard && (
