@@ -1650,6 +1650,7 @@ function SettingsView({
   const [newCatName, setNewCatName] = useState("");
   const [newCatKind, setNewCatKind] = useState("expense"); // "expense" | "income"
   const [newCatDiaDia, setNewCatDiaDia] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   // Quando uma categoria personalizada é adicionada/removida, CATEGORY_LIST
   // muda — garante que o formulário de orçamento tenha uma linha (com 0)
@@ -1690,7 +1691,10 @@ function SettingsView({
     const ok = window.confirm(
       "Isso apaga TODOS os gastos, entradas, investimentos e dados do cartão salvos no aparelho. Não dá pra desfazer. Continuar?"
     );
-    if (ok) onResetData();
+    if (!ok) return;
+    onResetData();
+    setResetDone(true);
+    setTimeout(() => setResetDone(false), 2200);
   };
 
   const busy = bankStatus === "connecting" || bankStatus === "importing";
@@ -1959,17 +1963,17 @@ function SettingsView({
               alignItems: "center",
               justifyContent: "center",
               gap: 8,
-              background: "none",
-              color: CORAL,
-              border: `1px solid ${CORAL}`,
+              background: resetDone ? TEAL : "none",
+              color: resetDone ? CREAM_TEXT : CORAL,
+              border: `1px solid ${resetDone ? TEAL : CORAL}`,
               borderRadius: 8,
               padding: "12px",
               fontSize: 13.5,
               fontWeight: 600,
             }}
           >
-            <Trash2 size={16} />
-            Apagar todos os lançamentos
+            {resetDone ? <Check size={16} /> : <Trash2 size={16} />}
+            {resetDone ? "Todos os dados foram apagados" : "Apagar todos os lançamentos"}
           </button>
         </div>
       </Card>
@@ -2064,9 +2068,11 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
           <div
             style={{
               display: "flex",
+              flexShrink: 0,
               flexWrap: "nowrap",
               gap: 6,
               overflowX: "auto",
+              overflowY: "hidden",
               padding: "0 18px 12px",
             }}
           >
