@@ -1417,43 +1417,61 @@ function CreditCardsView({
   // de faturas da Pluggy: é sempre calculada como as transações do cartão
   // que ainda não têm billId (não foram vinculadas a nenhuma fatura fechada).
   // Compras parceladas costumam vir com TODAS as parcelas futuras já
-  // lançadas com a data real de cada uma (não só a parcela do mês corrente),
-  // todas sem billId até a fatura respectiva fechar — por isso agrupamos
-  // essas transações pelo mês da própria data, em vez de tratar tudo como
-  // se fosse a fatura corrente. O mês mais antigo do grupo é a fatura em
-  // aberto de verdade; os meses depois dele são as próximas faturas.
+  // lançadas com a data real de cada uma, todas sem billId até a fatura
+  // respectiva fechar. O fechamento da fatura pode cair no meio do mês (ex:
+  // dia 16) — por isso agrupamos pelo CICLO real da fatura (usando
+  // balanceCloseDate, a data de fechamento da fatura em aberto, como
+  // referência), nunca por mês de calendário: senão uma compra feita depois
+  // do dia de fechamento ficava fora da fatura em aberto.
   const OPEN_BILL_ID = "__open__";
   const FUTURE_PREFIX = "__future__:";
 
-  const openTransactions = (selectedCard?.transactions || []).filter((tx) => !tx.billId);
-  const openByMonth = new Map();
-  openTransactions.forEach((tx) => {
-    const key = (tx.date || "").slice(0, 7);
-    if (!openByMonth.has(key)) openByMonth.set(key, []);
-    openByMonth.get(key).push(tx);
-  });
-  const openMonthKeys = [...openByMonth.keys()].sort();
-  const currentOpenMonth = openMonthKeys[0] || null;
-  const futureMonthKeys = openMonthKeys.slice(1);
+  const closeDateStr = selectedCard?.balanceCloseDate
+    ? selectedCard.balanceCloseDate.slice(0, 10)
+    : null;
 
-  const monthKeyLabel = (key) => {
-    const [y, m] = key.split("-").map(Number);
+  const addMonthsToDateStr = (dateStr, months) => {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setMonth(dt.getMonth() + months);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  };
+
+  const openTransactions = (selectedCard?.transactions || []).filter((tx) => !tx.billId);
+  const cycleGroups = new Map();
+  openTransactions.forEach((tx) => {
+    const txDateStr = (tx.date || "").slice(0, 10);
+    let idx = 0;
+    if (closeDateStr) {
+      while (txDateStr > addMonthsToDateStr(closeDateStr, idx)) idx++;
+    }
+    if (!cycleGroups.has(idx)) cycleGroups.set(idx, []);
+    cycleGroups.get(idx).push(tx);
+  });
+  const cycleIndexes = [...cycleGroups.keys()].sort((a, b) => a - b);
+  const currentCycleIndex = cycleIndexes.length > 0 ? cycleIndexes[0] : 0;
+  const futureCycleIndexes = cycleIndexes.slice(1);
+
+  const cycleLabel = (idx) => {
+    if (!closeDateStr) return "Em aberto";
+    const [y, m] = addMonthsToDateStr(closeDateStr, idx).split("-").map(Number);
     return `${MONTHS_PT[m - 1].slice(0, 3)}/${String(y).slice(2)}`;
   };
 
   const effectiveBillId = selectedBillId || OPEN_BILL_ID;
   const effectiveBill = bills.find((b) => b.id === effectiveBillId) || null;
-  const effectiveFutureMonth = effectiveBillId.startsWith(FUTURE_PREFIX)
-    ? effectiveBillId.slice(FUTURE_PREFIX.length)
+  const effectiveFutureCycle = effectiveBillId.startsWith(FUTURE_PREFIX)
+    ? Number(effectiveBillId.slice(FUTURE_PREFIX.length))
     : null;
 
-  const billTransactions = effectiveFutureMonth
-    ? openByMonth.get(effectiveFutureMonth) || []
-    : effectiveBillId === OPEN_BILL_ID
-    ? openByMonth.get(currentOpenMonth) || []
-    : (selectedCard?.transactions || []).filter((tx) => tx.billId === effectiveBillId);
+  const billTransactions =
+    effectiveFutureCycle != null
+      ? cycleGroups.get(effectiveFutureCycle) || []
+      : effectiveBillId === OPEN_BILL_ID
+      ? cycleGroups.get(currentCycleIndex) || []
+      : (selectedCard?.transactions || []).filter((tx) => tx.billId === effectiveBillId);
 
-  const openInvoiceTotal = (openByMonth.get(currentOpenMonth) || []).reduce(
+  const openInvoiceTotal = (cycleGroups.get(currentCycleIndex) || []).reduce(
     (s, tx) => s + Math.abs(tx.amount),
     0
   );
@@ -1611,20 +1629,20 @@ function CreditCardsView({
             ))}
           </div>
 
-          {futureMonthKeys.length > 0 && (
+          {futureCycleIndexes.length > 0 && (
             <>
               <SectionLabel>Próximas faturas (já comprometido)</SectionLabel>
               <Card>
                 <div style={{ fontSize: 11, color: MUTED, padding: "10px 14px 4px" }}>
-                  Compras parceladas que já têm parcela lançada nesses meses — não inclui compras futuras ainda não feitas.
+                  Compras parceladas que já têm parcela lançada nessas faturas — não inclui compras futuras ainda não feitas.
                 </div>
-                {futureMonthKeys.map((key, i) => {
-                  const total = openByMonth.get(key).reduce((s, tx) => s + Math.abs(tx.amount), 0);
-                  const active = effectiveFutureMonth === key;
+                {futureCycleIndexes.map((idx, i) => {
+                  const total = cycleGroups.get(idx).reduce((s, tx) => s + Math.abs(tx.amount), 0);
+                  const active = effectiveFutureCycle === idx;
                   return (
                     <button
-                      key={key}
-                      onClick={() => onSelectBill(FUTURE_PREFIX + key)}
+                      key={idx}
+                      onClick={() => onSelectBill(FUTURE_PREFIX + idx)}
                       style={{
                         display: "flex",
                         width: "100%",
@@ -1632,10 +1650,10 @@ function CreditCardsView({
                         padding: "10px 14px",
                         background: active ? "#F5F1E5" : "transparent",
                         border: "none",
-                        borderBottom: i === futureMonthKeys.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                        borderBottom: i === futureCycleIndexes.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
                       }}
                     >
-                      <span style={{ fontSize: 13, fontWeight: active ? 700 : 400 }}>{monthKeyLabel(key)}</span>
+                      <span style={{ fontSize: 13, fontWeight: active ? 700 : 400 }}>{cycleLabel(idx)}</span>
                       <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
                         {fmtBRL(total)}
                       </span>
@@ -1649,8 +1667,8 @@ function CreditCardsView({
           <SectionLabel style={{ marginTop: 22 }}>
             {effectiveBill
               ? `Lançamentos · vence ${new Date(effectiveBill.dueDate).toLocaleDateString("pt-BR")}`
-              : effectiveFutureMonth
-              ? `Lançamentos · ${monthKeyLabel(effectiveFutureMonth)} (ainda não fechou)`
+              : effectiveFutureCycle != null
+              ? `Lançamentos · ${cycleLabel(effectiveFutureCycle)} (ainda não fechou)`
               : "Lançamentos · fatura em aberto"}
           </SectionLabel>
           {billTransactions.length === 0 ? (
