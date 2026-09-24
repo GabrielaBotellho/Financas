@@ -128,6 +128,18 @@ const MONTHS_PT = [
 const PLUGGY_CONNECT_SCRIPT_URL =
   "https://cdn.pluggy.ai/pluggy-connect/v2.8.2/pluggy-connect.js";
 
+// Status possíveis do item (conexão bancária) na Pluggy — só UPDATED
+// significa que sincronizou de verdade sem erro.
+const ITEM_STATUS_LABEL = {
+  UPDATED: "Sincronizado",
+  UPDATING: "Sincronizando…",
+  OUTDATED: "Desatualizado",
+  LOGIN_ERROR: "Erro de login — precisa reconectar no meu.pluggy.ai",
+  WAITING_USER_INPUT: "Aguardando confirmação (MFA)",
+  CREATING: "Conectando…",
+  CREATE_ERROR: "Erro ao conectar",
+};
+
 function fmtBRL(n) {
   return (n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -156,6 +168,7 @@ const LS_KEYS = {
   customCategories: "caderneta:customCategories",
   investments: "caderneta:investments",
   creditCards: "caderneta:creditCards",
+  itemStatus: "caderneta:itemStatus",
 };
 
 function lsGet(key) {
@@ -286,6 +299,7 @@ export default function FinancasApp() {
   const [pendingItems, setPendingItems] = useState(() => lsGet(LS_KEYS.pending) || []);
   const [investments, setInvestments] = useState(() => lsGet(LS_KEYS.investments) || []);
   const [creditCards, setCreditCards] = useState(() => lsGet(LS_KEYS.creditCards) || []);
+  const [itemStatus, setItemStatus] = useState(() => lsGet(LS_KEYS.itemStatus) || null);
   const [ccStatus, setCcStatus] = useState("idle"); // idle | loading
   const [selectedCardId, setSelectedCardId] = useState(null);
   const [selectedBillId, setSelectedBillId] = useState(null);
@@ -413,9 +427,11 @@ export default function FinancasApp() {
         } catch (_) {}
         throw new Error(`Não consegui buscar os cartões de crédito (${detail})`);
       }
-      const { cards } = await res.json();
+      const { cards, itemStatus: nextItemStatus } = await res.json();
       setCreditCards(cards);
       lsSet(LS_KEYS.creditCards, cards);
+      setItemStatus(nextItemStatus || null);
+      lsSet(LS_KEYS.itemStatus, nextItemStatus || null);
       if (cards.length > 0) setSelectedCardId((id) => id || cards[0].id);
     } catch (e) {
       console.error(e);
@@ -949,6 +965,7 @@ export default function FinancasApp() {
               onSelectCard={setSelectedCardId}
               selectedBillId={selectedBillId}
               onSelectBill={setSelectedBillId}
+              itemStatus={itemStatus}
             />
           )}
 
@@ -1407,6 +1424,7 @@ function CreditCardsView({
   onSelectCard,
   selectedBillId,
   onSelectBill,
+  itemStatus,
 }) {
   const loading = status === "loading";
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
@@ -1502,6 +1520,29 @@ function CreditCardsView({
       >
         {loading ? "Buscando faturas…" : cards.length > 0 ? "Atualizar faturas" : "Buscar faturas"}
       </button>
+
+      {itemStatus && (
+        <div
+          style={{
+            fontSize: 11,
+            color: itemStatus.status === "UPDATED" ? MUTED : CORAL,
+            textAlign: "center",
+            marginTop: -10,
+            marginBottom: 16,
+          }}
+        >
+          {ITEM_STATUS_LABEL[itemStatus.status] || itemStatus.status || "Status da conexão desconhecido"}
+          {itemStatus.lastUpdatedAt
+            ? ` · última sincronização ${new Date(itemStatus.lastUpdatedAt).toLocaleString("pt-BR", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}`
+            : ""}
+        </div>
+      )}
 
       {cards.length === 0 && !loading && (
         <div style={{ textAlign: "center", padding: "20px 10px", color: MUTED, fontSize: 13 }}>
