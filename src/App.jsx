@@ -2012,11 +2012,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
 
   const monthLabel = (ym) => {
     const [y, m] = ym.split("-").map(Number);
-    const label = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", {
-      month: "short",
-      year: "2-digit",
-    });
-    return label.replace(".", "");
+    return `${MONTHS_PT[m - 1].slice(0, 3)}/${String(y).slice(2)}`;
   };
 
   const visibleList =
@@ -2068,6 +2064,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
           <div
             style={{
               display: "flex",
+              flexWrap: "nowrap",
               gap: 6,
               overflowX: "auto",
               padding: "0 18px 12px",
@@ -2079,6 +2076,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                 onClick={() => setMonthFilter(ym)}
                 style={{
                   flexShrink: 0,
+                  whiteSpace: "nowrap",
                   fontFamily: "'IBM Plex Mono', monospace",
                   fontSize: 11,
                   textTransform: "uppercase",
