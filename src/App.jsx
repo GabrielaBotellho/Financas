@@ -384,6 +384,20 @@ export default function FinancasApp() {
     saveInvestments(investments.filter((i) => i.id !== id));
   };
 
+  // Apaga só os lançamentos (gastos, entradas, investimentos, cartão e
+  // pendências de importação). Mantém a conexão bancária, as categorias
+  // personalizadas e as configurações de orçamento/renda, que são
+  // preferências e não "dados financeiros" no sentido de histórico.
+  const resetAllData = useCallback(() => {
+    saveExpenses([]);
+    saveInvestments([]);
+    savePending([]);
+    setCreditCards([]);
+    lsSet(LS_KEYS.creditCards, []);
+    setSelectedCardId(null);
+    setSelectedBillId(null);
+  }, [saveExpenses, saveInvestments, savePending]);
+
   /* -------------------- cartão de crédito (faturas) ------------------- */
   const fetchCreditCards = useCallback(async () => {
     if (!bankItemId) return;
@@ -949,6 +963,7 @@ export default function FinancasApp() {
               customCategories={customCategories}
               onAddCategory={addCustomCategory}
               onRemoveCategory={removeCustomCategory}
+              onResetData={resetAllData}
             />
           )}
         </div>
@@ -1627,6 +1642,7 @@ function SettingsView({
   customCategories,
   onAddCategory,
   onRemoveCategory,
+  onResetData,
 }) {
   const [localBudgets, setLocalBudgets] = useState(budgets);
   const [localIncome, setLocalIncome] = useState(income || "");
@@ -1668,6 +1684,13 @@ function SettingsView({
     setNewCatName("");
     setNewCatKind("expense");
     setNewCatDiaDia(false);
+  };
+
+  const handleResetData = () => {
+    const ok = window.confirm(
+      "Isso apaga TODOS os gastos, entradas, investimentos e dados do cartão salvos no aparelho. Não dá pra desfazer. Continuar?"
+    );
+    if (ok) onResetData();
   };
 
   const busy = bankStatus === "connecting" || bankStatus === "importing";
@@ -1919,6 +1942,37 @@ function SettingsView({
       >
         {saved ? "Salvo ✓" : "Salvar configurações"}
       </button>
+
+      <SectionLabel style={{ marginTop: 22 }}>Zona de risco</SectionLabel>
+      <Card>
+        <div style={{ padding: "14px" }}>
+          <div style={{ fontSize: 13, marginBottom: 10, color: INK }}>
+            Apaga gastos, entradas, investimentos e dados do cartão salvos
+            neste aparelho. A conexão com o banco, as categorias
+            personalizadas e o orçamento continuam salvos.
+          </div>
+          <button
+            onClick={handleResetData}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              background: "none",
+              color: CORAL,
+              border: `1px solid ${CORAL}`,
+              borderRadius: 8,
+              padding: "12px",
+              fontSize: 13.5,
+              fontWeight: 600,
+            }}
+          >
+            <Trash2 size={16} />
+            Apagar todos os lançamentos
+          </button>
+        </div>
+      </Card>
     </div>
   );
 }
