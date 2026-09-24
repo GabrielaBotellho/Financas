@@ -1411,32 +1411,42 @@ function CreditCardsView({
   const loading = status === "loading";
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
   const bills = selectedCard?.bills || [];
-  const effectiveBillId = selectedBillId || bills[0]?.id || null;
-  const effectiveBill = bills.find((b) => b.id === effectiveBillId) || null;
-  const isMostRecentBill = bills.length > 0 && bills[0]?.id === effectiveBillId;
 
-  let billTransactions = [];
-  let showingUnbilledFallback = false;
-  if (selectedCard) {
-    if (bills.length === 0) {
-      // Sem dados de fatura (endpoint falhou ou instituição não retorna
-      // esse produto) — mostra todas as transações da conta mesmo assim,
-      // sem agrupar por fatura.
-      billTransactions = selectedCard.transactions;
-    } else {
-      const matched = selectedCard.transactions.filter((tx) => tx.billId === effectiveBillId);
-      if (matched.length === 0 && isMostRecentBill) {
-        // A fatura mais recente costuma estar "em aberto" — as compras
-        // feitas nela ainda não ganharam o vínculo (billId) até ela
-        // fechar de vez. Nesse caso, mostramos as compras ainda soltas
-        // (sem fatura vinculada) como aproximação do que está nela.
-        billTransactions = selectedCard.transactions.filter((tx) => !tx.billId);
-        showingUnbilledFallback = billTransactions.length > 0;
-      } else {
-        billTransactions = matched;
-      }
+  // Nem toda instituição devolve a fatura em aberto via /bills (às vezes só
+  // vêm faturas já fechadas/pagas) — então "em aberto" não depende da lista
+  // de faturas da Pluggy: é sempre calculada como as transações do cartão
+  // que ainda não têm billId (não foram vinculadas a nenhuma fatura fechada).
+  const OPEN_BILL_ID = "__open__";
+  const openTransactions = (selectedCard?.transactions || []).filter((tx) => !tx.billId);
+
+  const effectiveBillId = selectedBillId || OPEN_BILL_ID;
+  const effectiveBill = bills.find((b) => b.id === effectiveBillId) || null;
+
+  const billTransactions =
+    effectiveBillId === OPEN_BILL_ID
+      ? openTransactions
+      : (selectedCard?.transactions || []).filter((tx) => tx.billId === effectiveBillId);
+
+  // Projeção do que já está comprometido nos próximos meses: compras
+  // parceladas que ainda estão na fatura em aberto (parcela atual < total)
+  // vão se repetir com o mesmo valor nas faturas seguintes, até a última
+  // parcela. Não inclui compras futuras que ainda não existem.
+  const projectedTotals = new Map();
+  openTransactions.forEach((tx) => {
+    const total = tx.totalInstallments || 1;
+    const current = tx.installmentNumber || 1;
+    for (let i = 1; i <= total - current; i++) {
+      projectedTotals.set(i, (projectedTotals.get(i) || 0) + Math.abs(tx.amount));
     }
-  }
+  });
+  const projectedMonths = [...projectedTotals.entries()].sort((a, b) => a[0] - b[0]);
+
+  const monthAheadLabel = (offset) => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + offset);
+    return `${MONTHS_PT[d.getMonth()].slice(0, 3)}/${String(d.getFullYear()).slice(2)}`;
+  };
 
   if (!bankItemId) {
     return (
@@ -1546,52 +1556,87 @@ function CreditCardsView({
             </div>
           )}
 
-          {bills.length > 0 && (
+          <SectionLabel style={{ marginTop: 22 }}>Faturas</SectionLabel>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto", flexShrink: 0 }}>
+            <button
+              onClick={() => onSelectBill(OPEN_BILL_ID)}
+              style={{
+                flexShrink: 0,
+                background: effectiveBillId === OPEN_BILL_ID ? TEAL : "#F5F1E5",
+                color: effectiveBillId === OPEN_BILL_ID ? CREAM_TEXT : INK,
+                border: `1px solid ${effectiveBillId === OPEN_BILL_ID ? TEAL : PAPER_LINE}`,
+                borderRadius: 8,
+                padding: "8px 12px",
+                fontSize: 11.5,
+                textAlign: "left",
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>Em aberto</div>
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", marginTop: 1 }}>
+                {fmtBRL(openTransactions.reduce((s, tx) => s + Math.abs(tx.amount), 0))}
+              </div>
+            </button>
+            {bills.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => onSelectBill(b.id)}
+                style={{
+                  flexShrink: 0,
+                  background: effectiveBillId === b.id ? BRASS : "#F5F1E5",
+                  color: effectiveBillId === b.id ? INK : INK,
+                  border: `1px solid ${effectiveBillId === b.id ? BRASS : PAPER_LINE}`,
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  fontSize: 11.5,
+                  textAlign: "left",
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>
+                  {new Date(b.dueDate).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" })}
+                </div>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", marginTop: 1 }}>
+                  {fmtBRL(b.totalAmount)}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {effectiveBillId === OPEN_BILL_ID && projectedMonths.length > 0 && (
             <>
-              <SectionLabel style={{ marginTop: 22 }}>Faturas</SectionLabel>
-              <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
-                {bills.map((b) => (
-                  <button
-                    key={b.id}
-                    onClick={() => onSelectBill(b.id)}
+              <SectionLabel>Próximas faturas (já comprometido)</SectionLabel>
+              <Card>
+                <div style={{ fontSize: 11, color: MUTED, padding: "10px 14px 4px" }}>
+                  Só o que já está parcelado hoje — não inclui compras futuras.
+                </div>
+                {projectedMonths.map(([offset, total], i) => (
+                  <div
+                    key={offset}
                     style={{
-                      flexShrink: 0,
-                      background: effectiveBillId === b.id ? BRASS : "#F5F1E5",
-                      color: effectiveBillId === b.id ? INK : INK,
-                      border: `1px solid ${effectiveBillId === b.id ? BRASS : PAPER_LINE}`,
-                      borderRadius: 8,
-                      padding: "8px 12px",
-                      fontSize: 11.5,
-                      textAlign: "left",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "8px 14px",
+                      borderBottom: i === projectedMonths.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
                     }}
                   >
-                    <div style={{ fontWeight: 600 }}>
-                      {new Date(b.dueDate).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" })}
-                    </div>
-                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", marginTop: 1 }}>
-                      {fmtBRL(b.totalAmount)}
-                    </div>
-                  </button>
+                    <span style={{ fontSize: 13 }}>{monthAheadLabel(offset)}</span>
+                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
+                      {fmtBRL(total)}
+                    </span>
+                  </div>
                 ))}
-              </div>
+              </Card>
             </>
           )}
 
-          <SectionLabel>
+          <SectionLabel style={{ marginTop: 22 }}>
             {effectiveBill
               ? `Lançamentos · vence ${new Date(effectiveBill.dueDate).toLocaleDateString("pt-BR")}`
-              : "Lançamentos recentes (fatura em aberto)"}
+              : "Lançamentos · fatura em aberto"}
           </SectionLabel>
-          {showingUnbilledFallback && (
-            <div style={{ fontSize: 11, color: MUTED, marginBottom: 8, marginTop: -4 }}>
-              Essa fatura ainda está em aberto — mostrando as compras mais
-              recentes que ainda não fecharam em nenhuma fatura.
-            </div>
-          )}
           {billTransactions.length === 0 ? (
             <div style={{ textAlign: "center", padding: "20px 10px", color: MUTED, fontSize: 13 }}>
-              {isMostRecentBill
-                ? "Nenhum lançamento encontrado — nem na fatura nem em compras soltas ainda não fechadas."
+              {effectiveBillId === OPEN_BILL_ID
+                ? "Nenhuma compra nova desde a última fatura fechada."
                 : "Nenhum lançamento encontrado nessa fatura."}
             </div>
           ) : (
