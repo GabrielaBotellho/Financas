@@ -22,9 +22,14 @@ module.exports = async function handler(req, res) {
 
   try {
     const accounts = await fetchAccounts(itemId);
+    // Só conta corrente (BANK) entra na importação geral. Cartão de crédito
+    // (CREDIT) tem aba própria (api/credit-cards.js) com as faturas — além
+    // disso a Pluggy inverte o sinal do amount em contas CREDIT (positivo =
+    // compra), o que faria compras do cartão aparecerem como entrada aqui.
+    const bankAccounts = accounts.filter((account) => account.type === "BANK");
 
     const all = [];
-    for (const account of accounts) {
+    for (const account of bankAccounts) {
       const txs = await fetchTransactions(account.id, { from, to });
       for (const tx of txs) {
         const isExpense = tx.amount < 0;
