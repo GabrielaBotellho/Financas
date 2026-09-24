@@ -16,6 +16,7 @@ import {
   Check,
   TrendingUp,
   CreditCard,
+  Copy,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -1768,6 +1769,7 @@ function SettingsView({
   const [newCatKind, setNewCatKind] = useState("expense"); // "expense" | "income"
   const [newCatDiaDia, setNewCatDiaDia] = useState(false);
   const [resetDone, setResetDone] = useState(false);
+  const [itemIdCopied, setItemIdCopied] = useState(false);
 
   // Quando uma categoria personalizada é adicionada/removida, CATEGORY_LIST
   // muda — garante que o formulário de orçamento tenha uma linha (com 0)
@@ -1814,6 +1816,18 @@ function SettingsView({
     setTimeout(() => setResetDone(false), 2200);
   };
 
+  const handleCopyItemId = async () => {
+    if (!bankItemId) return;
+    try {
+      await navigator.clipboard.writeText(bankItemId);
+      setItemIdCopied(true);
+      setTimeout(() => setItemIdCopied(false), 2000);
+    } catch (_) {
+      // Clipboard API pode falhar (ex: sem HTTPS ou sem permissão) — sem
+      // fallback, o ID continua visível na tela pra copiar manualmente.
+    }
+  };
+
   const busy = bankStatus === "connecting" || bankStatus === "importing";
 
   return (
@@ -1826,6 +1840,40 @@ function SettingsView({
               ? "Banco conectado. Você pode atualizar os lançamentos quando quiser."
               : "Conecte o Itaú ou o Nubank pra importar os gastos automaticamente, via Pluggy."}
           </div>
+
+          {bankItemId && (
+            <button
+              onClick={handleCopyItemId}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                width: "100%",
+                background: "#F5F1E5",
+                border: `1px solid ${PAPER_LINE}`,
+                borderRadius: 6,
+                padding: "8px 10px",
+                marginBottom: 10,
+                textAlign: "left",
+              }}
+            >
+              {itemIdCopied ? <Check size={13} color={TEAL} /> : <Copy size={13} color={MUTED} />}
+              <span
+                style={{
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: 11,
+                  color: MUTED,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  flex: 1,
+                }}
+              >
+                {itemIdCopied ? "Copiado — cole no Explorador de execuções da Pluggy" : bankItemId}
+              </span>
+            </button>
+          )}
+
           <button
             onClick={onConnectBank}
             disabled={busy}
