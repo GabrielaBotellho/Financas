@@ -1416,37 +1416,47 @@ function CreditCardsView({
   // vêm faturas já fechadas/pagas) — então "em aberto" não depende da lista
   // de faturas da Pluggy: é sempre calculada como as transações do cartão
   // que ainda não têm billId (não foram vinculadas a nenhuma fatura fechada).
+  // Compras parceladas costumam vir com TODAS as parcelas futuras já
+  // lançadas com a data real de cada uma (não só a parcela do mês corrente),
+  // todas sem billId até a fatura respectiva fechar — por isso agrupamos
+  // essas transações pelo mês da própria data, em vez de tratar tudo como
+  // se fosse a fatura corrente. O mês mais antigo do grupo é a fatura em
+  // aberto de verdade; os meses depois dele são as próximas faturas.
   const OPEN_BILL_ID = "__open__";
+  const FUTURE_PREFIX = "__future__:";
+
   const openTransactions = (selectedCard?.transactions || []).filter((tx) => !tx.billId);
+  const openByMonth = new Map();
+  openTransactions.forEach((tx) => {
+    const key = (tx.date || "").slice(0, 7);
+    if (!openByMonth.has(key)) openByMonth.set(key, []);
+    openByMonth.get(key).push(tx);
+  });
+  const openMonthKeys = [...openByMonth.keys()].sort();
+  const currentOpenMonth = openMonthKeys[0] || null;
+  const futureMonthKeys = openMonthKeys.slice(1);
+
+  const monthKeyLabel = (key) => {
+    const [y, m] = key.split("-").map(Number);
+    return `${MONTHS_PT[m - 1].slice(0, 3)}/${String(y).slice(2)}`;
+  };
 
   const effectiveBillId = selectedBillId || OPEN_BILL_ID;
   const effectiveBill = bills.find((b) => b.id === effectiveBillId) || null;
+  const effectiveFutureMonth = effectiveBillId.startsWith(FUTURE_PREFIX)
+    ? effectiveBillId.slice(FUTURE_PREFIX.length)
+    : null;
 
-  const billTransactions =
-    effectiveBillId === OPEN_BILL_ID
-      ? openTransactions
-      : (selectedCard?.transactions || []).filter((tx) => tx.billId === effectiveBillId);
+  const billTransactions = effectiveFutureMonth
+    ? openByMonth.get(effectiveFutureMonth) || []
+    : effectiveBillId === OPEN_BILL_ID
+    ? openByMonth.get(currentOpenMonth) || []
+    : (selectedCard?.transactions || []).filter((tx) => tx.billId === effectiveBillId);
 
-  // Projeção do que já está comprometido nos próximos meses: compras
-  // parceladas que ainda estão na fatura em aberto (parcela atual < total)
-  // vão se repetir com o mesmo valor nas faturas seguintes, até a última
-  // parcela. Não inclui compras futuras que ainda não existem.
-  const projectedTotals = new Map();
-  openTransactions.forEach((tx) => {
-    const total = tx.totalInstallments || 1;
-    const current = tx.installmentNumber || 1;
-    for (let i = 1; i <= total - current; i++) {
-      projectedTotals.set(i, (projectedTotals.get(i) || 0) + Math.abs(tx.amount));
-    }
-  });
-  const projectedMonths = [...projectedTotals.entries()].sort((a, b) => a[0] - b[0]);
-
-  const monthAheadLabel = (offset) => {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() + offset);
-    return `${MONTHS_PT[d.getMonth()].slice(0, 3)}/${String(d.getFullYear()).slice(2)}`;
-  };
+  const openInvoiceTotal = (openByMonth.get(currentOpenMonth) || []).reduce(
+    (s, tx) => s + Math.abs(tx.amount),
+    0
+  );
 
   if (!bankItemId) {
     return (
@@ -1573,7 +1583,7 @@ function CreditCardsView({
             >
               <div style={{ fontWeight: 600 }}>Em aberto</div>
               <div style={{ fontFamily: "'IBM Plex Mono', monospace", marginTop: 1 }}>
-                {fmtBRL(openTransactions.reduce((s, tx) => s + Math.abs(tx.amount), 0))}
+                {fmtBRL(openInvoiceTotal)}
               </div>
             </button>
             {bills.map((b) => (
@@ -1601,29 +1611,37 @@ function CreditCardsView({
             ))}
           </div>
 
-          {effectiveBillId === OPEN_BILL_ID && projectedMonths.length > 0 && (
+          {futureMonthKeys.length > 0 && (
             <>
               <SectionLabel>Próximas faturas (já comprometido)</SectionLabel>
               <Card>
                 <div style={{ fontSize: 11, color: MUTED, padding: "10px 14px 4px" }}>
-                  Só o que já está parcelado hoje — não inclui compras futuras.
+                  Compras parceladas que já têm parcela lançada nesses meses — não inclui compras futuras ainda não feitas.
                 </div>
-                {projectedMonths.map(([offset, total], i) => (
-                  <div
-                    key={offset}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      padding: "8px 14px",
-                      borderBottom: i === projectedMonths.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-                    }}
-                  >
-                    <span style={{ fontSize: 13 }}>{monthAheadLabel(offset)}</span>
-                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
-                      {fmtBRL(total)}
-                    </span>
-                  </div>
-                ))}
+                {futureMonthKeys.map((key, i) => {
+                  const total = openByMonth.get(key).reduce((s, tx) => s + Math.abs(tx.amount), 0);
+                  const active = effectiveFutureMonth === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => onSelectBill(FUTURE_PREFIX + key)}
+                      style={{
+                        display: "flex",
+                        width: "100%",
+                        justifyContent: "space-between",
+                        padding: "10px 14px",
+                        background: active ? "#F5F1E5" : "transparent",
+                        border: "none",
+                        borderBottom: i === futureMonthKeys.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                      }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: active ? 700 : 400 }}>{monthKeyLabel(key)}</span>
+                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
+                        {fmtBRL(total)}
+                      </span>
+                    </button>
+                  );
+                })}
               </Card>
             </>
           )}
@@ -1631,6 +1649,8 @@ function CreditCardsView({
           <SectionLabel style={{ marginTop: 22 }}>
             {effectiveBill
               ? `Lançamentos · vence ${new Date(effectiveBill.dueDate).toLocaleDateString("pt-BR")}`
+              : effectiveFutureMonth
+              ? `Lançamentos · ${monthKeyLabel(effectiveFutureMonth)} (ainda não fechou)`
               : "Lançamentos · fatura em aberto"}
           </SectionLabel>
           {billTransactions.length === 0 ? (
