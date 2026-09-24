@@ -7,6 +7,12 @@
 
 const { fetchAccounts, fetchBills, fetchTransactions, fetchItem } = require("../lib/pluggy");
 
+function offsetDaysISO(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
     res.status(405).json({ error: "Método não permitido" });
@@ -54,9 +60,17 @@ module.exports = async function handler(req, res) {
         billsError = err.message;
       }
 
-      // Cartão de crédito guarda ~12 meses de histórico na Pluggy; não
-      // limitamos por data aqui pra trazer isso tudo de uma vez.
-      const transactions = await fetchTransactions(account.id, {});
+      // Sem dateFrom/dateTo explícitos, a Pluggy parece devolver um
+      // snapshot mais cacheado/desatualizado pra contas de cartão (ao
+      // contrário da conta corrente em api/transactions.js, que sempre
+      // manda intervalo de data e sincroniza certinho). Passar um
+      // intervalo bem largo força uma consulta atualizada, cobrindo os
+      // ~12 meses de histórico que a Pluggy guarda pra cartão, com folga
+      // pra parcelas futuras já lançadas.
+      const transactions = await fetchTransactions(account.id, {
+        from: offsetDaysISO(-400),
+        to: offsetDaysISO(180),
+      });
 
       cards.push({
         id: account.id,
