@@ -1983,6 +1983,7 @@ function SettingsView({
 /* ------------------------------------------------------------------ */
 function ImportReviewModal({ candidates, onCancel, onConfirm }) {
   const [list, setList] = useState(candidates);
+  const [monthFilter, setMonthFilter] = useState("all");
 
   const toggleInclude = (key) => {
     setList((l) => l.map((c) => (c.key === key ? { ...c, include: !c.include } : c)));
@@ -1995,6 +1996,35 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
   };
 
   const includedCount = list.filter((c) => c.include).length;
+
+  // Mais novo primeiro, pra categorizar começando pelo lançamento mais recente.
+  const sortedList = useMemo(
+    () => [...list].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+    [list]
+  );
+
+  // Meses presentes no lote, do mais recente pro mais antigo — vira o filtro
+  // que ajuda a conferir se já categorizou tudo de um mês específico.
+  const months = useMemo(() => {
+    const set = new Set(sortedList.map((c) => c.date.slice(0, 7)));
+    return [...set].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  }, [sortedList]);
+
+  const monthLabel = (ym) => {
+    const [y, m] = ym.split("-").map(Number);
+    const label = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", {
+      month: "short",
+      year: "2-digit",
+    });
+    return label.replace(".", "");
+  };
+
+  const visibleList =
+    monthFilter === "all"
+      ? sortedList
+      : sortedList.filter((c) => c.date.slice(0, 7) === monthFilter);
+
+  const visibleIncludedCount = visibleList.filter((c) => c.include).length;
 
   return (
     <div
@@ -2034,8 +2064,46 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
             : "Confira a categoria de cada lançamento — despesas já vêm com sugestão quando possível; entradas comuns (salário, PIX recebido) você categoriza na mão; lançamentos de investimento (aporte/resgate) vão direto pra aba Investimentos, fora dos totais da tela inicial. Desmarque o que não quiser importar."}
         </div>
 
+        {months.length > 1 && (
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              overflowX: "auto",
+              padding: "0 18px 12px",
+            }}
+          >
+            {["all", ...months].map((ym) => (
+              <button
+                key={ym}
+                onClick={() => setMonthFilter(ym)}
+                style={{
+                  flexShrink: 0,
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.4,
+                  padding: "5px 10px",
+                  borderRadius: 20,
+                  border: `1px solid ${monthFilter === ym ? TEAL : PAPER_LINE}`,
+                  background: monthFilter === ym ? TEAL : "transparent",
+                  color: monthFilter === ym ? CREAM_TEXT : INK,
+                }}
+              >
+                {ym === "all" ? "Todos" : monthLabel(ym)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {monthFilter !== "all" && (
+          <div style={{ fontSize: 11, color: MUTED, padding: "0 18px 10px" }}>
+            {visibleIncludedCount} de {visibleList.length} selecionados em {monthLabel(monthFilter)}
+          </div>
+        )}
+
         <div style={{ flex: 1, overflowY: "auto", padding: "0 18px" }}>
-          {list.map((c) => (
+          {visibleList.map((c) => (
             <div
               key={c.key}
               style={{
