@@ -5,7 +5,7 @@
 // conectado, junto com as faturas (bills) e as transações de cada uma —
 // pra alimentar a aba "Cartão de Crédito" do app.
 
-const { fetchAccounts, fetchBills, fetchTransactions } = require("../lib/pluggy");
+const { fetchAccounts, fetchBills, fetchTransactions, fetchItem } = require("../lib/pluggy");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -22,6 +22,21 @@ module.exports = async function handler(req, res) {
   try {
     const accounts = await fetchAccounts(itemId);
     const creditAccounts = accounts.filter((a) => a.type === "CREDIT");
+
+    // Status da conexão em si (não da conta) — quando sincronizou de
+    // verdade pela última vez. Se essa chamada falhar, seguimos sem essa
+    // informação em vez de derrubar a resposta inteira.
+    let itemStatus = null;
+    try {
+      const item = await fetchItem(itemId);
+      itemStatus = {
+        status: item.status,
+        executionStatus: item.executionStatus,
+        lastUpdatedAt: item.lastUpdatedAt,
+      };
+    } catch (err) {
+      console.error(`Falha ao buscar status do item ${itemId}:`, err.message);
+    }
 
     const cards = [];
     for (const account of creditAccounts) {
@@ -79,7 +94,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    res.status(200).json({ cards });
+    res.status(200).json({ cards, itemStatus });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
