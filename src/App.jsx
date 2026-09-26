@@ -173,6 +173,7 @@ const LS_KEYS = {
   itemStatus: "caderneta:itemStatus",
   rotativoRate: "caderneta:rotativoRate",
   cardCloseDays: "caderneta:cardCloseDays",
+  cardUnreliableForecast: "caderneta:cardUnreliableForecast",
 };
 
 function lsGet(key) {
@@ -309,6 +310,13 @@ export default function FinancasApp() {
   // antes, então isso é configurado manualmente por cartão em vez de
   // confiar automaticamente no valor da API.
   const [cardCloseDays, setCardCloseDays] = useState(() => lsGet(LS_KEYS.cardCloseDays) || {});
+  // Se a data prevista pela Pluggy pra parcela futura desse cartão costuma
+  // "pular" um mês (confirmado com dados reais: acontece no Itaú, não
+  // acontece no Nubank) — quando marcado, corrige a previsão a partir de
+  // qualquer parcela já realizada; quando não, confia na previsão.
+  const [cardUnreliableForecast, setCardUnreliableForecast] = useState(
+    () => lsGet(LS_KEYS.cardUnreliableForecast) || {}
+  );
   // O widget "Meu Pluggy" só deixa escolher UM banco por vez (Itaú OU
   // Nubank), nunca os dois juntos — então cada banco vira uma conexão
   // própria, com seu próprio itemId. bankItems guarda a lista inteira.
@@ -364,6 +372,13 @@ export default function FinancasApp() {
     setCardCloseDays(nextMap);
     if (!lsSet(LS_KEYS.cardCloseDays, nextMap)) {
       setError("Não consegui salvar o dia de fechamento da fatura.");
+    }
+  }, []);
+
+  const saveCardUnreliableForecast = useCallback((nextMap) => {
+    setCardUnreliableForecast(nextMap);
+    if (!lsSet(LS_KEYS.cardUnreliableForecast, nextMap)) {
+      setError("Não consegui salvar a configuração de previsão de parcelas.");
     }
   }, []);
 
@@ -1083,6 +1098,7 @@ export default function FinancasApp() {
               viewMode={viewMode}
               rotativoRate={rotativoRate}
               cardCloseDays={cardCloseDays}
+              cardUnreliableForecast={cardUnreliableForecast}
             />
           )}
 
@@ -1096,6 +1112,8 @@ export default function FinancasApp() {
               creditCards={creditCards}
               cardCloseDays={cardCloseDays}
               onSaveCardCloseDays={saveCardCloseDays}
+              cardUnreliableForecast={cardUnreliableForecast}
+              onSaveCardUnreliableForecast={saveCardUnreliableForecast}
               bankItems={bankItems}
               bankStatus={bankStatus}
               onConnectBank={connectBank}
@@ -1552,9 +1570,11 @@ function CreditCardsView({
   viewMode,
   rotativoRate,
   cardCloseDays,
+  cardUnreliableForecast,
 }) {
   const loading = status === "loading";
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
+  const forecastIsUnreliable = !!(selectedCard && cardUnreliableForecast[selectedCard.id]);
   // Diagnóstico temporário — investigando parcelas caindo na fatura
   // errada quando há vários meses de parcelamento pela frente.
   const [showDiagnostic, setShowDiagnostic] = useState(false);
@@ -1577,14 +1597,18 @@ function CreditCardsView({
   const today = todayISO();
 
   // A data que a Pluggy dá pra uma parcela FUTURA (ainda não aconteceu) é
-  // uma previsão — às vezes ela já é confiável e mensal (confirmado com
-  // dados reais do Nubank), às vezes ela "pula" um mês (confirmado com
-  // dados reais do Itaú/KOGUT). A diferença: quando já existem PELO MENOS
-  // DUAS parcelas da mesma compra já realizadas, elas confirmam o ritmo
-  // real (1 parcela = 1 ciclo) — nesse caso extrapola a partir da mais
-  // recente realizada, ignorando a data prevista (que pode estar
-  // adiantada). Com só uma (ou nenhuma) parcela já realizada, não tem
-  // base pra desconfiar da previsão — usa ela direto, só com uma rede de
+  // uma previsão — em alguns bancos ela já é confiável e mensal
+  // (confirmado com dados reais do Nubank: mesmo "pulando" 2 ciclos entre
+  // a última parcela realizada e a primeira prevista, a previsão em si
+  // está certa), em outros ela "pula" um mês de verdade (confirmado com
+  // dados reais do Itaú: KOGUT e adidas). Não dá pra distinguir isso só
+  // pelo padrão da data — os dois casos reais são estruturalmente
+  // idênticos e pedem respostas opostas — então é configurável por
+  // cartão em Configurações (cardUnreliableForecast). Só quando o
+  // cartão está marcado como "previsão não confiável" é que, havendo ao
+  // menos 1 parcela já realizada, ela vira âncora e a previsão é
+  // ignorada. Nos demais casos (cartão confiável, ou nenhuma parcela
+  // ainda realizada), usa a data prevista direto, só com uma rede de
   // segurança: nunca deixa cair no mesmo ciclo da parcela anterior ou
   // antes (parcelamento é sempre sequencial, no mínimo 1 ciclo à frente).
   //
@@ -1642,7 +1666,7 @@ function CreditCardsView({
           txBaseDescription
         )
     );
-    if (realizedSiblings.length >= 2) {
+    if (forecastIsUnreliable && realizedSiblings.length >= 1) {
       const anchor = realizedSiblings.reduce((a, b) =>
         b.installmentNumber > a.installmentNumber ? b : a
       );
@@ -1694,11 +1718,11 @@ function CreditCardsView({
           txBaseDescription
         )
     );
-    if (realizedSiblings.length >= 2) {
+    if (forecastIsUnreliable && realizedSiblings.length >= 1) {
       const anchor = realizedSiblings.reduce((a, b) =>
         b.installmentNumber > a.installmentNumber ? b : a
       );
-      return `${realizedSiblings.length} parcelas já realizadas confirmam o ritmo — âncora: parcela ${anchor.installmentNumber}/${anchor.totalInstallments} em ${(anchor.date || "").slice(0, 10)} (ciclo ${cycleMonthKey(anchor.date || "")}), ignora data própria (raw seria: ${rawKey})`;
+      return `cartão marcado como previsão não confiável — âncora: parcela ${anchor.installmentNumber}/${anchor.totalInstallments} em ${(anchor.date || "").slice(0, 10)} (ciclo ${cycleMonthKey(anchor.date || "")}), ignora data própria (raw seria: ${rawKey})`;
     }
     const previous = allCardTransactions.find(
       (o) =>
@@ -2101,6 +2125,8 @@ function SettingsView({
   creditCards,
   cardCloseDays,
   onSaveCardCloseDays,
+  cardUnreliableForecast,
+  onSaveCardUnreliableForecast,
   bankItems,
   bankStatus,
   onConnectBank,
@@ -2115,6 +2141,9 @@ function SettingsView({
   const [localIncome, setLocalIncome] = useState(income || "");
   const [localRotativoRate, setLocalRotativoRate] = useState(rotativoRate ?? 16);
   const [localCardCloseDays, setLocalCardCloseDays] = useState(cardCloseDays || {});
+  const [localCardUnreliableForecast, setLocalCardUnreliableForecast] = useState(
+    cardUnreliableForecast || {}
+  );
   const [saved, setSaved] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatKind, setNewCatKind] = useState("expense"); // "expense" | "income"
@@ -2167,6 +2196,7 @@ function SettingsView({
       cleanedCloseDays[id] = Number(localCardCloseDays[id]) || 3;
     });
     onSaveCardCloseDays(cleanedCloseDays);
+    onSaveCardUnreliableForecast(localCardUnreliableForecast);
     setSaved(true);
     setTimeout(() => setSaved(false), 1600);
   };
@@ -2436,6 +2466,41 @@ function SettingsView({
                   }}
                 />
               </div>
+            ))}
+          </Card>
+
+          <SectionLabel style={{ marginTop: 22 }}>Previsão de parcelas futuras</SectionLabel>
+          <Card>
+            <div style={{ fontSize: 11, color: MUTED, padding: "10px 14px 4px" }}>
+              Alguns bancos preveem a data de parcelas futuras errado (ela "pula" um
+              mês) — confirmado no Itaú, não acontece no Nubank. Marque só os cartões
+              onde isso acontecer de verdade; marcar sem necessidade também erra a
+              conta.
+            </div>
+            {creditCards.map((c, i) => (
+              <label
+                key={c.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: i === creditCards.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!localCardUnreliableForecast[c.id]}
+                  onChange={(e) =>
+                    setLocalCardUnreliableForecast((m) => ({ ...m, [c.id]: e.target.checked }))
+                  }
+                />
+                <span style={{ fontSize: 13, flex: 1 }}>
+                  {c.name}
+                  {c.bankLabel ? ` · ${c.bankLabel}` : ""}
+                </span>
+              </label>
             ))}
           </Card>
         </>
