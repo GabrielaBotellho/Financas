@@ -1918,6 +1918,12 @@ function CreditCardsView({
                         ? ` · parcela ${tx.installmentNumber}/${tx.totalInstallments}`
                         : ""}
                     </div>
+                    {effectiveBillId === ALL_ID && (
+                      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: CORAL, marginTop: 2 }}>
+                        billId: {tx.billId ? "sim" : "não"}
+                        {!tx.billId ? ` · ciclo calculado: ${effectiveCycleKey(tx)}` : ""}
+                      </div>
+                    )}
                   </div>
                   <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13.5, fontWeight: 600 }}>
                     {fmtBRL(Math.abs(tx.amount))}
