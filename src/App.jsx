@@ -171,6 +171,7 @@ const LS_KEYS = {
   investments: "caderneta:investments",
   creditCards: "caderneta:creditCards",
   itemStatus: "caderneta:itemStatus",
+  rotativoRate: "caderneta:rotativoRate",
 };
 
 function lsGet(key) {
@@ -297,6 +298,10 @@ export default function FinancasApp() {
     ...((lsGet(LS_KEYS.config) || {}).budgets || {}),
   }));
   const [income, setIncome] = useState(() => (lsGet(LS_KEYS.config) || {}).income || 0);
+  // Taxa de juros do rotativo (% ao mês) — a Pluggy não retorna isso (não
+  // tem campo de taxa de juros na API), então a usuária informa direto,
+  // olhando no app do banco/contrato do cartão.
+  const [rotativoRate, setRotativoRate] = useState(() => lsGet(LS_KEYS.rotativoRate) ?? 16);
   // O widget "Meu Pluggy" só deixa escolher UM banco por vez (Itaú OU
   // Nubank), nunca os dois juntos — então cada banco vira uma conexão
   // própria, com seu próprio itemId. bankItems guarda a lista inteira.
@@ -338,6 +343,13 @@ export default function FinancasApp() {
     setIncome(nextIncome);
     if (!lsSet(LS_KEYS.config, { budgets: nextBudgets, income: nextIncome })) {
       setError("Não consegui salvar as configurações.");
+    }
+  }, []);
+
+  const saveRotativoRate = useCallback((nextRate) => {
+    setRotativoRate(nextRate);
+    if (!lsSet(LS_KEYS.rotativoRate, nextRate)) {
+      setError("Não consegui salvar a taxa de juros.");
     }
   }, []);
 
@@ -1055,6 +1067,7 @@ export default function FinancasApp() {
               onSummaryChange={setCardSummary}
               cursor={cursor}
               viewMode={viewMode}
+              rotativoRate={rotativoRate}
             />
           )}
 
@@ -1063,6 +1076,8 @@ export default function FinancasApp() {
               budgets={budgets}
               income={income}
               onSave={saveConfig}
+              rotativoRate={rotativoRate}
+              onSaveRotativoRate={saveRotativoRate}
               bankItems={bankItems}
               bankStatus={bankStatus}
               onConnectBank={connectBank}
@@ -1517,6 +1532,7 @@ function CreditCardsView({
   onSummaryChange,
   cursor,
   viewMode,
+  rotativoRate,
 }) {
   const loading = status === "loading";
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
@@ -1633,6 +1649,33 @@ function CreditCardsView({
   const isCurrentCycle = viewMode === "mes" && selectedCycleKeys[0] === todayCycleKey;
   const isFutureCycle = viewMode === "mes" && selectedCycleKeys[0] > todayCycleKey;
   const summaryLabel = isCurrentCycle ? "em aberto" : isFutureCycle ? "ainda não fechou" : "";
+
+  // Saldo rotativo: quando a fatura anterior não é paga por completo, o
+  // que falta vira dívida que fica rendendo juros todo dia até ser quitada.
+  // Um pagamento (valor negativo) feito dentro do ciclo atual é o que
+  // quita a fatura fechada do ciclo anterior — se o total pago for menor
+  // que o total daquela fatura, a diferença é o saldo rotativo em aberto.
+  const paymentsByRealizedCycle = new Map();
+  allCardTransactions.forEach((tx) => {
+    if (tx.amount > 0) return;
+    const key = cycleMonthKey(tx.date || "");
+    paymentsByRealizedCycle.set(key, (paymentsByRealizedCycle.get(key) || 0) + Math.abs(tx.amount));
+  });
+  const previousCycleKeyOf = (key) => {
+    const [y, m] = key.split("-").map(Number);
+    const dt = new Date(y, m - 2, 1);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const previousCycleKey = previousCycleKeyOf(selectedCycleKeys[0] || todayCycleKey);
+  const previousCycleTotal = (cycleGroups.get(previousCycleKey) || []).reduce(
+    (s, tx) => s + Math.abs(tx.amount),
+    0
+  );
+  const paidTowardPreviousCycle = paymentsByRealizedCycle.get(selectedCycleKeys[0]) || 0;
+  const rotativoBalance = isCurrentCycle
+    ? Math.max(0, previousCycleTotal - paidTowardPreviousCycle)
+    : 0;
+  const dailyInterest = (rotativoBalance * (Number(rotativoRate) || 0)) / 100 / 30;
 
   useEffect(() => {
     if (!onSummaryChange) return;
@@ -1766,6 +1809,35 @@ function CreditCardsView({
             </div>
           </Card>
 
+          {rotativoBalance > 0 && (
+            <>
+              <SectionLabel style={{ marginTop: 22 }}>Saldo rotativo</SectionLabel>
+              <Card>
+                <div style={{ padding: "14px", display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      Em aberto
+                    </div>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2, color: CORAL }}>
+                      {fmtBRL(rotativoBalance)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      Juros por dia ({rotativoRate}% a.m.)
+                    </div>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2, color: CORAL }}>
+                      {fmtBRL(dailyInterest)}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: MUTED, padding: "0 14px 12px" }}>
+                  A fatura anterior não foi paga por completo — esse saldo continua rendendo juros até ser quitado.
+                </div>
+              </Card>
+            </>
+          )}
+
           {selectedCard.billsError && (
             <div
               style={{
@@ -1843,6 +1915,8 @@ function SettingsView({
   budgets,
   income,
   onSave,
+  rotativoRate,
+  onSaveRotativoRate,
   bankItems,
   bankStatus,
   onConnectBank,
@@ -1855,6 +1929,7 @@ function SettingsView({
 }) {
   const [localBudgets, setLocalBudgets] = useState(budgets);
   const [localIncome, setLocalIncome] = useState(income || "");
+  const [localRotativoRate, setLocalRotativoRate] = useState(rotativoRate ?? 16);
   const [saved, setSaved] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatKind, setNewCatKind] = useState("expense"); // "expense" | "income"
@@ -1885,6 +1960,7 @@ function SettingsView({
       cleaned[k] = Number(localBudgets[k]) || 0;
     });
     onSave(cleaned, Number(localIncome) || 0);
+    onSaveRotativoRate(Number(localRotativoRate) || 0);
     setSaved(true);
     setTimeout(() => setSaved(false), 1600);
   };
@@ -2077,6 +2153,33 @@ function SettingsView({
           />
           <div style={{ fontSize: 11, color: MUTED, marginTop: 6 }}>
             Usada para mostrar quanto sobra no mês/ano.
+          </div>
+        </div>
+      </Card>
+
+      <SectionLabel style={{ marginTop: 22 }}>Juros do rotativo do cartão</SectionLabel>
+      <Card>
+        <div style={{ padding: "12px 14px" }}>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={localRotativoRate}
+            onChange={(e) => setLocalRotativoRate(e.target.value)}
+            placeholder="16"
+            style={{
+              width: "100%",
+              border: `1px solid ${PAPER_LINE}`,
+              borderRadius: 6,
+              padding: "8px 10px",
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: 14,
+              background: PAPER,
+            }}
+          />
+          <div style={{ fontSize: 11, color: MUTED, marginTop: 6 }}>
+            Taxa mensal (% a.m.) cobrada quando a fatura não é paga integralmente. A
+            Pluggy não informa isso — confira no app do banco/contrato do cartão.
+            Usada para estimar o juro diário do saldo rotativo, na aba Cartão.
           </div>
         </div>
       </Card>
