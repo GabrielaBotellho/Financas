@@ -860,7 +860,7 @@ export default function FinancasApp() {
     <div
       style={{
         minHeight: "100vh",
-        background: PAPER,
+        background: "red",
         fontFamily: "'IBM Plex Sans', sans-serif",
         color: INK,
         display: "flex",
