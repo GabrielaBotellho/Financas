@@ -313,7 +313,6 @@ export default function FinancasApp() {
   const [itemStatuses, setItemStatuses] = useState(() => lsGet(LS_KEYS.itemStatus) || []);
   const [ccStatus, setCcStatus] = useState("idle"); // idle | loading
   const [selectedCardId, setSelectedCardId] = useState(null);
-  const [selectedBillId, setSelectedBillId] = useState(null);
 
   const [tab, setTab] = useState("home"); // home | history | invest | settings
   const [showAdd, setShowAdd] = useState(false);
@@ -425,7 +424,6 @@ export default function FinancasApp() {
     setCreditCards([]);
     lsSet(LS_KEYS.creditCards, []);
     setSelectedCardId(null);
-    setSelectedBillId(null);
   }, [saveExpenses, saveInvestments, savePending]);
 
   // Remove uma conexão específica (ex: parou de usar aquele cartão, ou
@@ -442,7 +440,6 @@ export default function FinancasApp() {
       setItemStatuses(nextStatuses);
       lsSet(LS_KEYS.itemStatus, nextStatuses);
       setSelectedCardId(null);
-      setSelectedBillId(null);
     },
     [bankItems, creditCards, itemStatuses, saveBankItems]
   );
@@ -929,7 +926,11 @@ export default function FinancasApp() {
             {tab === "card" ? (
               <>
                 <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
-                  {cardSummary ? `${cardSummary.cardName} · ${cardSummary.label}` : "Fatura atual"}
+                  {cardSummary
+                    ? cardSummary.label
+                      ? `${cardSummary.cardName} · ${cardSummary.label}`
+                      : cardSummary.cardName
+                    : "Fatura atual"}
                 </div>
                 <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
                   {fmtBRL(cardSummary?.total ?? 0)}
@@ -1050,10 +1051,10 @@ export default function FinancasApp() {
               onFetch={fetchCreditCards}
               selectedCardId={selectedCardId}
               onSelectCard={setSelectedCardId}
-              selectedBillId={selectedBillId}
-              onSelectBill={setSelectedBillId}
               itemStatuses={itemStatuses}
               onSummaryChange={setCardSummary}
+              cursor={cursor}
+              viewMode={viewMode}
             />
           )}
 
@@ -1512,27 +1513,19 @@ function CreditCardsView({
   onFetch,
   selectedCardId,
   onSelectCard,
-  selectedBillId,
-  onSelectBill,
   itemStatuses,
   onSummaryChange,
+  cursor,
+  viewMode,
 }) {
   const loading = status === "loading";
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
-  const bills = selectedCard?.bills || [];
 
-  // Compras parceladas costumam vir com TODAS as parcelas futuras já
-  // lançadas com a data de cada uma.
-  //
   // O ciclo da fatura desse cartão fecha no dia 3 e abre no dia 4: uma
   // compra entre 04/mês e 03/mês seguinte é da fatura do mês seguinte
   // (critério confirmado pela usuária — balanceCloseDate da Pluggy não
   // batia com isso).
-  const OPEN_BILL_ID = "__open__";
-  const ALL_ID = "__all__";
-  const FUTURE_PREFIX = "__future__:";
   const BILL_CLOSE_DAY = 3;
-
   const cycleMonthKey = (dateStr) => {
     const [y, m, d] = dateStr.slice(0, 10).split("-").map(Number);
     if (d <= BILL_CLOSE_DAY) return `${y}-${String(m).padStart(2, "0")}`;
@@ -1541,25 +1534,8 @@ function CreditCardsView({
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
   };
 
-  // Esse cartão nunca vincula billId nas transações (confirmado: até a
-  // parcela que já está numa fatura fechada vem com billId vazio) — então
-  // "billId" não serve pra saber o que já fechou. Em vez disso, usamos a
-  // data de fechamento real da última fatura fechada (billClosingDate, que
-  // vem de /bills, não das transações): tudo depois dela ainda está em
-  // aberto; tudo até ela já foi coberto por alguma fatura fechada.
-  const lastClosingDate = bills.length > 0 ? bills[0].billClosingDate : null;
   const allCardTransactions = selectedCard?.transactions || [];
-  // Na Pluggy, pra conta de cartão de crédito, valor positivo é compra e
-  // valor negativo é pagamento/estorno (ex: "Pagamento recebido",
-  // "DEVOLUCAO SALDO CREDOR"). Um pagamento sempre quita a fatura
-  // ANTERIOR (a que já fechou) — não é um lançamento da fatura corrente,
-  // então não entra na lista de lançamentos em aberto/próximas faturas.
-  const openTransactions = allCardTransactions.filter((tx) => {
-    if (tx.billId) return false;
-    if (tx.amount <= 0) return false;
-    if (!lastClosingDate) return true;
-    return (tx.date || "").slice(0, 10) > lastClosingDate.slice(0, 10);
-  });
+  const today = todayISO();
 
   // A data que a Pluggy dá pra uma parcela FUTURA (ainda não aconteceu) é
   // só uma previsão — e na prática ela vem inconsistente (às vezes pula um
@@ -1570,22 +1546,20 @@ function CreditCardsView({
   // diferença de número de parcela (parcelamento é sempre sequencial: 1
   // parcela = 1 ciclo à frente). Sem parcela irmã já realizada pra
   // ancorar, cai no fallback de usar a própria data.
-  const today = todayISO();
+  //
   // O número da parcela vem colado no próprio texto da descrição (ex:
   // "KOGUT PARTICIPACOE03/04", "adidas FO Madureir01/03") — cada parcela
   // tem uma descrição levemente diferente por causa disso, então nunca
   // batiam numa comparação direta. Tira esse sufixo "NN/NN" do final antes
-  // de comparar duas parcelas da mesma compra.
+  // de comparar duas parcelas da mesma compra. A versão já faturada pode
+  // vir sem truncar (ex: "adidas FO Madureira") enquanto a ainda em
+  // aberto vem truncada pra caber o sufixo — por isso compara só o
+  // prefixo em comum, não igualdade exata.
   const stripInstallmentSuffix = (description, installmentNumber, totalInstallments) => {
     if (!description || !installmentNumber || !totalInstallments) return description || "";
     const suffix = `${String(installmentNumber).padStart(2, "0")}/${String(totalInstallments).padStart(2, "0")}`;
     return description.endsWith(suffix) ? description.slice(0, -suffix.length) : description;
   };
-  // A versão já faturada de uma compra pode vir com o nome do
-  // estabelecimento sem truncar (ex: "adidas FO Madureira"), enquanto a
-  // prevista ainda em aberto vem truncada pra caber o sufixo de parcela
-  // (ex: "adidas FO Madureir01/03") — comparar as duas por igualdade
-  // exata falha por causa disso. Compara só o prefixo em comum.
   const descriptionsMatch = (a, b) => {
     if (!a || !b) return false;
     const len = Math.min(a.length, b.length);
@@ -1597,8 +1571,6 @@ function CreditCardsView({
     if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
       return rawKey;
     }
-    // Já aconteceu (data <= hoje) — a data é real, não previsão. Confia
-    // nela direto, sem tentar ancorar em nada.
     if ((tx.date || "").slice(0, 10) <= today) {
       return rawKey;
     }
@@ -1607,11 +1579,6 @@ function CreditCardsView({
       tx.installmentNumber,
       tx.totalInstallments
     );
-    // Ancora numa parcela irmã da mesma compra que já ACONTECEU (data <=
-    // hoje — dado real) — nada de exigir valor idêntico, que pode falhar
-    // por imprecisão de ponto flutuante ou juro embutido variando
-    // centavo a centavo entre parcelas. Number(...) nos dois lados evita
-    // "4" (texto) !== 4.
     const realizedSiblings = allCardTransactions.filter(
       (o) =>
         (o.date || "").slice(0, 10) <= today &&
@@ -1635,60 +1602,37 @@ function CreditCardsView({
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
   };
 
+  // Na Pluggy, pra conta de cartão de crédito, valor positivo é compra e
+  // valor negativo é pagamento/estorno (ex: "Pagamento recebido",
+  // "DEVOLUCAO SALDO CREDOR"). Um pagamento sempre quita a fatura
+  // ANTERIOR (a que já fechou) — não é um lançamento de nenhuma fatura
+  // específica, então fica de fora do agrupamento por ciclo.
   const cycleGroups = new Map();
-  openTransactions.forEach((tx) => {
+  allCardTransactions.forEach((tx) => {
+    if (tx.amount <= 0) return;
     const key = effectiveCycleKey(tx);
     if (!cycleGroups.has(key)) cycleGroups.set(key, []);
     cycleGroups.get(key).push(tx);
   });
-  const cycleKeys = [...cycleGroups.keys()].sort();
-  const currentCycleKey = cycleKeys[0] || null;
-  const futureCycleKeys = cycleKeys.slice(1);
 
-  const cycleLabel = (key) => {
-    const [y, m] = key.split("-").map(Number);
-    return `${MONTHS_PT[m - 1].slice(0, 3)}/${String(y).slice(2)}`;
-  };
+  const todayCycleKey = cycleMonthKey(today);
 
-  const effectiveBillId = selectedBillId || OPEN_BILL_ID;
-  const effectiveBill = bills.find((b) => b.id === effectiveBillId) || null;
-  const effectiveFutureCycle = effectiveBillId.startsWith(FUTURE_PREFIX)
-    ? effectiveBillId.slice(FUTURE_PREFIX.length)
-    : null;
+  // A navegação de mês/ano do topo do app (a mesma usada por Início/
+  // Histórico/Investimentos) controla qual fatura aparece aqui.
+  const selectedCycleKeys =
+    viewMode === "ano"
+      ? [...cycleGroups.keys()].filter((k) => k.startsWith(`${cursor.y}-`)).sort()
+      : [`${cursor.y}-${String(cursor.m + 1).padStart(2, "0")}`];
 
-  const billTransactions =
-    effectiveBillId === ALL_ID
-      ? [...allCardTransactions].sort((a, b) => new Date(b.date) - new Date(a.date))
-      : effectiveFutureCycle
-      ? cycleGroups.get(effectiveFutureCycle) || []
-      : effectiveBillId === OPEN_BILL_ID
-      ? cycleGroups.get(currentCycleKey) || []
-      : (selectedCard?.transactions || []).filter((tx) => tx.billId === effectiveBillId);
+  const billTransactions = selectedCycleKeys
+    .flatMap((k) => cycleGroups.get(k) || [])
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  const openInvoiceTotal = (cycleGroups.get(currentCycleKey) || []).reduce(
-    (s, tx) => s + Math.abs(tx.amount),
-    0
-  );
+  const periodTotal = billTransactions.reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
-  // Resumo da fatura/ciclo selecionado agora — reportado pro topo do app,
-  // que não tem acesso a essa seleção (ela vive só aqui dentro).
-  const summaryTotal =
-    effectiveBillId === ALL_ID
-      ? billTransactions.reduce((s, tx) => s + (tx.amount > 0 ? Math.abs(tx.amount) : 0), 0)
-      : effectiveBill
-      ? effectiveBill.totalAmount
-      : effectiveFutureCycle
-      ? (cycleGroups.get(effectiveFutureCycle) || []).reduce((s, tx) => s + Math.abs(tx.amount), 0)
-      : openInvoiceTotal;
-
-  const summaryLabel =
-    effectiveBillId === ALL_ID
-      ? "tudo"
-      : effectiveBill
-      ? `vence ${new Date(effectiveBill.dueDate).toLocaleDateString("pt-BR")}`
-      : effectiveFutureCycle
-      ? `${cycleLabel(effectiveFutureCycle)} (a fechar)`
-      : "em aberto";
+  const isCurrentCycle = viewMode === "mes" && selectedCycleKeys[0] === todayCycleKey;
+  const isFutureCycle = viewMode === "mes" && selectedCycleKeys[0] > todayCycleKey;
+  const summaryLabel = isCurrentCycle ? "em aberto" : isFutureCycle ? "ainda não fechou" : "";
 
   useEffect(() => {
     if (!onSummaryChange) return;
@@ -1699,10 +1643,10 @@ function CreditCardsView({
     onSummaryChange({
       cardName: selectedCard.name,
       label: summaryLabel,
-      total: summaryTotal,
-      dueDate: effectiveBill?.dueDate || null,
+      total: periodTotal,
+      dueDate: null,
     });
-  }, [selectedCard, effectiveBillId, summaryTotal, summaryLabel, effectiveBill, onSummaryChange]);
+  }, [selectedCard, summaryLabel, periodTotal, onSummaryChange]);
 
   if (!hasBank) {
     return (
@@ -1778,10 +1722,7 @@ function CreditCardsView({
             {cards.map((c) => (
             <button
               key={c.id}
-              onClick={() => {
-                onSelectCard(c.id);
-                onSelectBill(null);
-              }}
+              onClick={() => onSelectCard(c.id)}
               style={{
                 flexShrink: 0,
                 background: selectedCard?.id === c.id ? INK : "#F5F1E5",
@@ -1825,7 +1766,7 @@ function CreditCardsView({
             </div>
           </Card>
 
-          {bills.length === 0 && selectedCard.billsError && (
+          {selectedCard.billsError && (
             <div
               style={{
                 background: "#F3D9D3",
@@ -1841,118 +1782,16 @@ function CreditCardsView({
             </div>
           )}
 
-          <SectionLabel style={{ marginTop: 22 }}>Faturas</SectionLabel>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto", flexShrink: 0 }}>
-            <button
-              onClick={() => onSelectBill(ALL_ID)}
-              style={{
-                flexShrink: 0,
-                background: effectiveBillId === ALL_ID ? INK : "#F5F1E5",
-                color: effectiveBillId === ALL_ID ? CREAM_TEXT : INK,
-                border: `1px solid ${effectiveBillId === ALL_ID ? INK : PAPER_LINE}`,
-                borderRadius: 8,
-                padding: "8px 12px",
-                fontSize: 11.5,
-                textAlign: "left",
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>Tudo</div>
-              <div style={{ fontFamily: "'IBM Plex Mono', monospace", marginTop: 1 }}>
-                {allCardTransactions.length} lanç.
-              </div>
-            </button>
-            <button
-              onClick={() => onSelectBill(OPEN_BILL_ID)}
-              style={{
-                flexShrink: 0,
-                background: effectiveBillId === OPEN_BILL_ID ? TEAL : "#F5F1E5",
-                color: effectiveBillId === OPEN_BILL_ID ? CREAM_TEXT : INK,
-                border: `1px solid ${effectiveBillId === OPEN_BILL_ID ? TEAL : PAPER_LINE}`,
-                borderRadius: 8,
-                padding: "8px 12px",
-                fontSize: 11.5,
-                textAlign: "left",
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>Em aberto</div>
-              <div style={{ fontFamily: "'IBM Plex Mono', monospace", marginTop: 1 }}>
-                {fmtBRL(openInvoiceTotal)}
-              </div>
-            </button>
-            {bills.map((b) => (
-              <button
-                key={b.id}
-                onClick={() => onSelectBill(b.id)}
-                style={{
-                  flexShrink: 0,
-                  background: effectiveBillId === b.id ? BRASS : "#F5F1E5",
-                  color: effectiveBillId === b.id ? INK : INK,
-                  border: `1px solid ${effectiveBillId === b.id ? BRASS : PAPER_LINE}`,
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  fontSize: 11.5,
-                  textAlign: "left",
-                }}
-              >
-                <div style={{ fontWeight: 600 }}>
-                  {new Date(b.dueDate).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" })}
-                </div>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", marginTop: 1 }}>
-                  {fmtBRL(b.totalAmount)}
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {futureCycleKeys.length > 0 && (
-            <>
-              <SectionLabel>Próximas faturas (já comprometido)</SectionLabel>
-              <Card>
-                <div style={{ fontSize: 11, color: MUTED, padding: "10px 14px 4px" }}>
-                  Compras parceladas que já têm parcela lançada nessas faturas — não inclui compras futuras ainda não feitas.
-                </div>
-                {futureCycleKeys.map((key, i) => {
-                  const total = cycleGroups.get(key).reduce((s, tx) => s + Math.abs(tx.amount), 0);
-                  const active = effectiveFutureCycle === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => onSelectBill(FUTURE_PREFIX + key)}
-                      style={{
-                        display: "flex",
-                        width: "100%",
-                        justifyContent: "space-between",
-                        padding: "10px 14px",
-                        background: active ? "#F5F1E5" : "transparent",
-                        border: "none",
-                        borderBottom: i === futureCycleKeys.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-                      }}
-                    >
-                      <span style={{ fontSize: 13, fontWeight: active ? 700 : 400 }}>{cycleLabel(key)}</span>
-                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
-                        {fmtBRL(total)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </Card>
-            </>
-          )}
-
           <SectionLabel style={{ marginTop: 22 }}>
-            {effectiveBillId === ALL_ID
-              ? "Lançamentos · tudo, sem separar por fatura"
-              : effectiveBill
-              ? `Lançamentos · vence ${new Date(effectiveBill.dueDate).toLocaleDateString("pt-BR")}`
-              : effectiveFutureCycle
-              ? `Lançamentos · ${cycleLabel(effectiveFutureCycle)} (ainda não fechou)`
-              : "Lançamentos · fatura em aberto"}
+            {isCurrentCycle
+              ? "Lançamentos · fatura em aberto"
+              : isFutureCycle
+              ? "Lançamentos · ainda não fechou"
+              : "Lançamentos"}
           </SectionLabel>
           {billTransactions.length === 0 ? (
             <div style={{ textAlign: "center", padding: "20px 10px", color: MUTED, fontSize: 13 }}>
-              {effectiveBillId === OPEN_BILL_ID
-                ? "Nenhuma compra nova desde a última fatura fechada."
-                : "Nenhum lançamento encontrado nessa fatura."}
+              Nenhum lançamento encontrado nesse período.
             </div>
           ) : (
             <Card>
@@ -1975,12 +1814,6 @@ function CreditCardsView({
                         ? ` · parcela ${tx.installmentNumber}/${tx.totalInstallments}`
                         : ""}
                     </div>
-                    {effectiveBillId === ALL_ID && (
-                      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: CORAL, marginTop: 2 }}>
-                        billId: {tx.billId ? "sim" : "não"}
-                        {!tx.billId ? ` · ciclo calculado: ${effectiveCycleKey(tx)}` : ""}
-                      </div>
-                    )}
                   </div>
                   <div
                     style={{
