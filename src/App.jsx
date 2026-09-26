@@ -833,9 +833,12 @@ export default function FinancasApp() {
   const pctInvested = incomePeriod > 0 ? (aportesPeriod / incomePeriod) * 100 : null;
 
   // -------- Cartão de crédito --------
-  const selectedCard = creditCards.find((c) => c.id === selectedCardId) || creditCards[0] || null;
-  // `bills` já vem ordenada do backend da mais recente pra mais antiga.
-  const openBill = selectedCard?.bills?.[0] || null;
+  // A CreditCardsView guarda internamente qual fatura/ciclo está
+  // selecionado (Em aberto, uma fatura fechada, uma próxima fatura) — ela
+  // reporta aqui o resumo de exibir no topo, pra ele acompanhar o que
+  // está selecionado lá embaixo em vez de mostrar sempre a última fatura
+  // fechada, fixa.
+  const [cardSummary, setCardSummary] = useState(null);
 
   const periodLabel =
     viewMode === "ano" ? `${cursor.y}` : `${MONTHS_PT[cursor.m]} ${cursor.y}`;
@@ -926,14 +929,14 @@ export default function FinancasApp() {
             {tab === "card" ? (
               <>
                 <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
-                  {selectedCard ? `Fatura · ${selectedCard.name}` : "Fatura atual"}
+                  {cardSummary ? `${cardSummary.cardName} · ${cardSummary.label}` : "Fatura atual"}
                 </div>
                 <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
-                  {fmtBRL(openBill?.totalAmount ?? selectedCard?.balance ?? 0)}
+                  {fmtBRL(cardSummary?.total ?? 0)}
                 </div>
-                {openBill?.dueDate ? (
+                {cardSummary?.dueDate ? (
                   <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
-                    vence em {new Date(openBill.dueDate).toLocaleDateString("pt-BR")}
+                    vence em {new Date(cardSummary.dueDate).toLocaleDateString("pt-BR")}
                   </div>
                 ) : creditCards.length === 0 ? (
                   <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
@@ -1050,6 +1053,7 @@ export default function FinancasApp() {
               selectedBillId={selectedBillId}
               onSelectBill={setSelectedBillId}
               itemStatuses={itemStatuses}
+              onSummaryChange={setCardSummary}
             />
           )}
 
@@ -1511,6 +1515,7 @@ function CreditCardsView({
   selectedBillId,
   onSelectBill,
   itemStatuses,
+  onSummaryChange,
 }) {
   const loading = status === "loading";
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
@@ -1664,6 +1669,40 @@ function CreditCardsView({
     (s, tx) => s + Math.abs(tx.amount),
     0
   );
+
+  // Resumo da fatura/ciclo selecionado agora — reportado pro topo do app,
+  // que não tem acesso a essa seleção (ela vive só aqui dentro).
+  const summaryTotal =
+    effectiveBillId === ALL_ID
+      ? billTransactions.reduce((s, tx) => s + (tx.amount > 0 ? Math.abs(tx.amount) : 0), 0)
+      : effectiveBill
+      ? effectiveBill.totalAmount
+      : effectiveFutureCycle
+      ? (cycleGroups.get(effectiveFutureCycle) || []).reduce((s, tx) => s + Math.abs(tx.amount), 0)
+      : openInvoiceTotal;
+
+  const summaryLabel =
+    effectiveBillId === ALL_ID
+      ? "tudo"
+      : effectiveBill
+      ? `vence ${new Date(effectiveBill.dueDate).toLocaleDateString("pt-BR")}`
+      : effectiveFutureCycle
+      ? `${cycleLabel(effectiveFutureCycle)} (a fechar)`
+      : "em aberto";
+
+  useEffect(() => {
+    if (!onSummaryChange) return;
+    if (!selectedCard) {
+      onSummaryChange(null);
+      return;
+    }
+    onSummaryChange({
+      cardName: selectedCard.name,
+      label: summaryLabel,
+      total: summaryTotal,
+      dueDate: effectiveBill?.dueDate || null,
+    });
+  }, [selectedCard, effectiveBillId, summaryTotal, summaryLabel, effectiveBill, onSummaryChange]);
 
   if (!hasBank) {
     return (
