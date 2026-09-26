@@ -1541,9 +1541,40 @@ function CreditCardsView({
   };
 
   const openTransactions = (selectedCard?.transactions || []).filter((tx) => !tx.billId);
+
+  // Parcelamentos costumam vir com uma data por parcela (cada linha já no
+  // mês certo, ex: "adidas 02/03" em novembro, "03/03" em dezembro) — mas
+  // às vezes o banco grava a MESMA data (a da compra original) em todas as
+  // parcelas, e aí a data sozinha não diz em qual fatura cada uma cai.
+  // Detectamos isso comparando as parcelas irmãs (mesma descrição/valor/
+  // total de parcelas): se as que ainda estão em aberto compartilham a
+  // mesma data, corrigimos somando (número da parcela − 1) meses a partir
+  // dela — sem essa correção elas ficariam todas empilhadas no mês da
+  // compra original em vez de espalhadas nas próprias faturas.
+  const effectiveCycleKey = (tx) => {
+    const rawKey = cycleMonthKey(tx.date || "");
+    if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
+      return rawKey;
+    }
+    const siblings = openTransactions.filter(
+      (o) =>
+        o.description === tx.description &&
+        o.totalInstallments === tx.totalInstallments &&
+        Math.abs(o.amount) === Math.abs(tx.amount)
+    );
+    const distinctDates = new Set(siblings.map((s) => (s.date || "").slice(0, 10)));
+    if (siblings.length <= 1 || distinctDates.size > 1) {
+      return rawKey;
+    }
+    const [y, m] = rawKey.split("-").map(Number);
+    const dt = new Date(y, m - 1, 1);
+    dt.setMonth(dt.getMonth() + (tx.installmentNumber - 1));
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+  };
+
   const cycleGroups = new Map();
   openTransactions.forEach((tx) => {
-    const key = cycleMonthKey(tx.date || "");
+    const key = effectiveCycleKey(tx);
     if (!cycleGroups.has(key)) cycleGroups.set(key, []);
     cycleGroups.get(key).push(tx);
   });
