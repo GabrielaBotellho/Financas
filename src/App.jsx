@@ -1544,8 +1544,14 @@ function CreditCardsView({
   // aberto; tudo até ela já foi coberto por alguma fatura fechada.
   const lastClosingDate = bills.length > 0 ? bills[0].billClosingDate : null;
   const allCardTransactions = selectedCard?.transactions || [];
+  // Na Pluggy, pra conta de cartão de crédito, valor positivo é compra e
+  // valor negativo é pagamento/estorno (ex: "Pagamento recebido",
+  // "DEVOLUCAO SALDO CREDOR"). Um pagamento sempre quita a fatura
+  // ANTERIOR (a que já fechou) — não é um lançamento da fatura corrente,
+  // então não entra na lista de lançamentos em aberto/próximas faturas.
   const openTransactions = allCardTransactions.filter((tx) => {
     if (tx.billId) return false;
+    if (tx.amount <= 0) return false;
     if (!lastClosingDate) return true;
     return (tx.date || "").slice(0, 10) > lastClosingDate.slice(0, 10);
   });
@@ -1937,7 +1943,15 @@ function CreditCardsView({
                       </div>
                     )}
                   </div>
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13.5, fontWeight: 600 }}>
+                  <div
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      color: tx.amount > 0 ? INK : TEAL,
+                    }}
+                  >
+                    {tx.amount > 0 ? "-" : "+"}
                     {fmtBRL(Math.abs(tx.amount))}
                   </div>
                 </div>
