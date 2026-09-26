@@ -1553,18 +1553,34 @@ function CreditCardsView({
   // frente). Sem parcela irmã já faturada pra ancorar (ex: é a primeira
   // parcela), cai no fallback de usar a própria data.
   const allCardTransactions = selectedCard?.transactions || [];
+  // O número da parcela vem colado no próprio texto da descrição (ex:
+  // "KOGUT PARTICIPACOE03/04", "adidas FO Madureir01/03") — cada parcela
+  // tem uma descrição levemente diferente por causa disso, então nunca
+  // batiam numa comparação direta. Tira esse sufixo "NN/NN" do final antes
+  // de comparar duas parcelas da mesma compra.
+  const stripInstallmentSuffix = (description, installmentNumber, totalInstallments) => {
+    if (!description || !installmentNumber || !totalInstallments) return description || "";
+    const suffix = `${String(installmentNumber).padStart(2, "0")}/${String(totalInstallments).padStart(2, "0")}`;
+    return description.endsWith(suffix) ? description.slice(0, -suffix.length) : description;
+  };
   const effectiveCycleKey = (tx) => {
     const rawKey = cycleMonthKey(tx.date || "");
     if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
       return rawKey;
     }
+    const txBaseDescription = stripInstallmentSuffix(
+      tx.description,
+      tx.installmentNumber,
+      tx.totalInstallments
+    );
     const billedSiblings = allCardTransactions.filter(
       (o) =>
         o.billId &&
         o.installmentNumber &&
-        o.description === tx.description &&
         o.totalInstallments === tx.totalInstallments &&
-        Math.abs(o.amount) === Math.abs(tx.amount)
+        Math.abs(o.amount) === Math.abs(tx.amount) &&
+        stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments) ===
+          txBaseDescription
     );
     if (billedSiblings.length === 0) {
       return rawKey;
