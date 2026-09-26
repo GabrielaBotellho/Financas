@@ -1516,13 +1516,8 @@ function CreditCardsView({
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
   const bills = selectedCard?.bills || [];
 
-  // Nem toda instituição devolve a fatura em aberto via /bills (às vezes só
-  // vêm faturas já fechadas/pagas) — então "em aberto" não depende da lista
-  // de faturas da Pluggy: é sempre calculada como as transações do cartão
-  // que ainda não têm billId (não foram vinculadas a nenhuma fatura fechada).
   // Compras parceladas costumam vir com TODAS as parcelas futuras já
-  // lançadas com a data real de cada uma, todas sem billId até a fatura
-  // respectiva fechar.
+  // lançadas com a data de cada uma.
   //
   // O ciclo da fatura desse cartão fecha no dia 3 e abre no dia 4: uma
   // compra entre 04/mês e 03/mês seguinte é da fatura do mês seguinte
@@ -1541,19 +1536,30 @@ function CreditCardsView({
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
   };
 
-  const openTransactions = (selectedCard?.transactions || []).filter((tx) => !tx.billId);
-
-  // A data que a Pluggy dá pra uma parcela que AINDA não foi faturada é só
-  // uma previsão — e na prática ela vem inconsistente (às vezes pula um
-  // mês, às vezes não é mensal certinho). Só a parcela que JÁ foi
-  // faturada (tem billId) tem uma data real, confirmada pelo banco.
-  // Por isso, pra parcela em aberto, a gente ignora a data dela e ancora
-  // no ciclo de uma parcela irmã já faturada da mesma compra (descrição +
-  // valor + total de parcelas), projetando pela diferença de número de
-  // parcela (parcelamento é sempre sequencial: 1 parcela = 1 ciclo à
-  // frente). Sem parcela irmã já faturada pra ancorar (ex: é a primeira
-  // parcela), cai no fallback de usar a própria data.
+  // Esse cartão nunca vincula billId nas transações (confirmado: até a
+  // parcela que já está numa fatura fechada vem com billId vazio) — então
+  // "billId" não serve pra saber o que já fechou. Em vez disso, usamos a
+  // data de fechamento real da última fatura fechada (billClosingDate, que
+  // vem de /bills, não das transações): tudo depois dela ainda está em
+  // aberto; tudo até ela já foi coberto por alguma fatura fechada.
+  const lastClosingDate = bills.length > 0 ? bills[0].billClosingDate : null;
   const allCardTransactions = selectedCard?.transactions || [];
+  const openTransactions = allCardTransactions.filter((tx) => {
+    if (tx.billId) return false;
+    if (!lastClosingDate) return true;
+    return (tx.date || "").slice(0, 10) > lastClosingDate.slice(0, 10);
+  });
+
+  // A data que a Pluggy dá pra uma parcela FUTURA (ainda não aconteceu) é
+  // só uma previsão — e na prática ela vem inconsistente (às vezes pula um
+  // mês). Só uma parcela que já ACONTECEU (data <= hoje) tem uma data
+  // real e confiável. Por isso, pra parcela ainda futura, a gente ignora
+  // a data dela e ancora no ciclo de uma parcela irmã já realizada da
+  // mesma compra (descrição + total de parcelas), projetando pela
+  // diferença de número de parcela (parcelamento é sempre sequencial: 1
+  // parcela = 1 ciclo à frente). Sem parcela irmã já realizada pra
+  // ancorar, cai no fallback de usar a própria data.
+  const today = todayISO();
   // O número da parcela vem colado no próprio texto da descrição (ex:
   // "KOGUT PARTICIPACOE03/04", "adidas FO Madureir01/03") — cada parcela
   // tem uma descrição levemente diferente por causa disso, então nunca
@@ -1580,18 +1586,24 @@ function CreditCardsView({
     if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
       return rawKey;
     }
+    // Já aconteceu (data <= hoje) — a data é real, não previsão. Confia
+    // nela direto, sem tentar ancorar em nada.
+    if ((tx.date || "").slice(0, 10) <= today) {
+      return rawKey;
+    }
     const txBaseDescription = stripInstallmentSuffix(
       tx.description,
       tx.installmentNumber,
       tx.totalInstallments
     );
-    // Compara só descrição (sem sufixo, por prefixo) + total de parcelas —
-    // nada de exigir valor idêntico, que pode falhar por imprecisão de
-    // ponto flutuante ou juro embutido variando centavo a centavo entre
-    // parcelas. Number(...) nos dois lados evita "4" (texto) !== 4.
-    const billedSiblings = allCardTransactions.filter(
+    // Ancora numa parcela irmã da mesma compra que já ACONTECEU (data <=
+    // hoje — dado real) — nada de exigir valor idêntico, que pode falhar
+    // por imprecisão de ponto flutuante ou juro embutido variando
+    // centavo a centavo entre parcelas. Number(...) nos dois lados evita
+    // "4" (texto) !== 4.
+    const realizedSiblings = allCardTransactions.filter(
       (o) =>
-        o.billId &&
+        (o.date || "").slice(0, 10) <= today &&
         o.installmentNumber &&
         Number(o.totalInstallments) === Number(tx.totalInstallments) &&
         descriptionsMatch(
@@ -1599,10 +1611,10 @@ function CreditCardsView({
           txBaseDescription
         )
     );
-    if (billedSiblings.length === 0) {
+    if (realizedSiblings.length === 0) {
       return rawKey;
     }
-    const anchor = billedSiblings.reduce((a, b) =>
+    const anchor = realizedSiblings.reduce((a, b) =>
       b.installmentNumber > a.installmentNumber ? b : a
     );
     const anchorKey = cycleMonthKey(anchor.date || "");
