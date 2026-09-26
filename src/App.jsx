@@ -1546,17 +1546,22 @@ function CreditCardsView({
   // mês certo, ex: "adidas 02/03" em novembro, "03/03" em dezembro) — mas
   // às vezes o banco grava a MESMA data (a da compra original) em todas as
   // parcelas, e aí a data sozinha não diz em qual fatura cada uma cai.
-  // Detectamos isso comparando as parcelas irmãs (mesma descrição/valor/
-  // total de parcelas): se as que ainda estão em aberto compartilham a
-  // mesma data, corrigimos somando (número da parcela − 1) meses a partir
-  // dela — sem essa correção elas ficariam todas empilhadas no mês da
-  // compra original em vez de espalhadas nas próprias faturas.
+  // Detectamos isso comparando com as parcelas irmãs da MESMA compra
+  // (descrição/valor/total de parcelas) — olhando TODAS as transações do
+  // cartão, não só as em aberto, porque muitas vezes as parcelas
+  // anteriores já foram pra faturas fechadas e só sobra uma em aberto
+  // (sem outra parcela aberta pra comparar a data). Se as parcelas
+  // encontradas compartilham a mesma data, corrigimos somando
+  // (número da parcela − 1) meses a partir dela — sem essa correção elas
+  // ficariam empilhadas no mês da compra original em vez de espalhadas
+  // nas próprias faturas.
+  const allCardTransactions = selectedCard?.transactions || [];
   const effectiveCycleKey = (tx) => {
     const rawKey = cycleMonthKey(tx.date || "");
     if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
       return rawKey;
     }
-    const siblings = openTransactions.filter(
+    const siblings = allCardTransactions.filter(
       (o) =>
         o.description === tx.description &&
         o.totalInstallments === tx.totalInstallments &&
