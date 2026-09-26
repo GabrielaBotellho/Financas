@@ -413,6 +413,24 @@ export default function FinancasApp() {
     setSelectedBillId(null);
   }, [saveExpenses, saveInvestments, savePending]);
 
+  // Itens "Meu Pluggy" não aceitam reconexão/atualização pelo widget (dá
+  // erro), então se um banco novo for adicionado no meu.pluggy.ai depois da
+  // autorização original, o item existente nunca fica sabendo. A única
+  // saída é esquecer esse itemId e autorizar uma conexão nova do zero, que
+  // aí sim enxerga todos os bancos que já existirem no Meu Pluggy no
+  // momento da nova autorização. Não mexe em gastos/categorias/orçamento —
+  // só na conexão em si e no que dependia dela (cartões, status do item).
+  const resetBankConnection = useCallback(() => {
+    setBankItemId(null);
+    lsSet(LS_KEYS.bankItemId, null);
+    setCreditCards([]);
+    lsSet(LS_KEYS.creditCards, []);
+    setItemStatus(null);
+    lsSet(LS_KEYS.itemStatus, null);
+    setSelectedCardId(null);
+    setSelectedBillId(null);
+  }, []);
+
   /* -------------------- cartão de crédito (faturas) ------------------- */
   const fetchCreditCards = useCallback(async () => {
     if (!bankItemId) return;
@@ -982,6 +1000,7 @@ export default function FinancasApp() {
               onAddCategory={addCustomCategory}
               onRemoveCategory={removeCustomCategory}
               onResetData={resetAllData}
+              onResetBankConnection={resetBankConnection}
             />
           )}
         </div>
@@ -1764,6 +1783,7 @@ function SettingsView({
   onAddCategory,
   onRemoveCategory,
   onResetData,
+  onResetBankConnection,
 }) {
   const [localBudgets, setLocalBudgets] = useState(budgets);
   const [localIncome, setLocalIncome] = useState(income || "");
@@ -1829,6 +1849,14 @@ function SettingsView({
       // Clipboard API pode falhar (ex: sem HTTPS ou sem permissão) — sem
       // fallback, o ID continua visível na tela pra copiar manualmente.
     }
+  };
+
+  const handleResetBankConnection = () => {
+    const ok = window.confirm(
+      "Isso esquece a conexão bancária atual (você vai precisar logar de novo no Meu Pluggy). Os gastos, entradas e categorias já salvos continuam intactos. Continuar?"
+    );
+    if (!ok) return;
+    onResetBankConnection();
   };
 
   const busy = bankStatus === "connecting" || bankStatus === "importing";
@@ -1905,6 +1933,38 @@ function SettingsView({
               ? "Buscar novos lançamentos"
               : "Conectar banco"}
           </button>
+
+          {bankItemId && (
+            <>
+              <div style={{ fontSize: 11, color: MUTED, marginTop: 12, marginBottom: 6 }}>
+                Adicionou um banco novo no Meu Pluggy depois de conectar aqui? Itens já
+                conectados não enxergam bancos adicionados depois — é preciso esquecer
+                essa conexão e autorizar de novo.
+              </div>
+              <button
+                onClick={handleResetBankConnection}
+                disabled={busy}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  background: "none",
+                  color: BRASS,
+                  border: `1px solid ${BRASS}`,
+                  borderRadius: 8,
+                  padding: "10px",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  opacity: busy ? 0.6 : 1,
+                }}
+              >
+                <RefreshCw size={14} />
+                Reconectar do zero (nova conexão)
+              </button>
+            </>
+          )}
         </div>
       </Card>
 
