@@ -164,7 +164,8 @@ function daysAgoISO(n) {
 const LS_KEYS = {
   expenses: "caderneta:expenses",
   config: "caderneta:config",
-  bankItemId: "caderneta:bankItemId",
+  bankItemId: "caderneta:bankItemId", // legado — migrado pra bankItems no load
+  bankItems: "caderneta:bankItems",
   pending: "caderneta:pending",
   customCategories: "caderneta:customCategories",
   investments: "caderneta:investments",
@@ -296,11 +297,20 @@ export default function FinancasApp() {
     ...((lsGet(LS_KEYS.config) || {}).budgets || {}),
   }));
   const [income, setIncome] = useState(() => (lsGet(LS_KEYS.config) || {}).income || 0);
-  const [bankItemId, setBankItemId] = useState(() => lsGet(LS_KEYS.bankItemId) || null);
+  // O widget "Meu Pluggy" só deixa escolher UM banco por vez (Itaú OU
+  // Nubank), nunca os dois juntos — então cada banco vira uma conexão
+  // própria, com seu próprio itemId. bankItems guarda a lista inteira.
+  // Migra o antigo bankItemId (valor único) pra essa lista, se existir.
+  const [bankItems, setBankItems] = useState(() => {
+    const stored = lsGet(LS_KEYS.bankItems);
+    if (stored) return stored;
+    const legacy = lsGet(LS_KEYS.bankItemId);
+    return legacy ? [{ itemId: legacy, label: "Banco 1" }] : [];
+  });
   const [pendingItems, setPendingItems] = useState(() => lsGet(LS_KEYS.pending) || []);
   const [investments, setInvestments] = useState(() => lsGet(LS_KEYS.investments) || []);
   const [creditCards, setCreditCards] = useState(() => lsGet(LS_KEYS.creditCards) || []);
-  const [itemStatus, setItemStatus] = useState(() => lsGet(LS_KEYS.itemStatus) || null);
+  const [itemStatuses, setItemStatuses] = useState(() => lsGet(LS_KEYS.itemStatus) || []);
   const [ccStatus, setCcStatus] = useState("idle"); // idle | loading
   const [selectedCardId, setSelectedCardId] = useState(null);
   const [selectedBillId, setSelectedBillId] = useState(null);
@@ -361,6 +371,11 @@ export default function FinancasApp() {
     lsSet(LS_KEYS.pending, next);
   }, []);
 
+  const saveBankItems = useCallback((next) => {
+    setBankItems(next);
+    lsSet(LS_KEYS.bankItems, next);
+  }, []);
+
   const addExpense = (exp) => {
     const next = [{ ...exp, id: uid() }, ...expenses];
     saveExpenses(next);
@@ -413,57 +428,87 @@ export default function FinancasApp() {
     setSelectedBillId(null);
   }, [saveExpenses, saveInvestments, savePending]);
 
-  // Itens "Meu Pluggy" não aceitam reconexão/atualização pelo widget (dá
-  // erro), então se um banco novo for adicionado no meu.pluggy.ai depois da
-  // autorização original, o item existente nunca fica sabendo. A única
-  // saída é esquecer esse itemId e autorizar uma conexão nova do zero, que
-  // aí sim enxerga todos os bancos que já existirem no Meu Pluggy no
-  // momento da nova autorização. Não mexe em gastos/categorias/orçamento —
-  // só na conexão em si e no que dependia dela (cartões, status do item).
-  const resetBankConnection = useCallback(() => {
-    setBankItemId(null);
-    lsSet(LS_KEYS.bankItemId, null);
-    setCreditCards([]);
-    lsSet(LS_KEYS.creditCards, []);
-    setItemStatus(null);
-    lsSet(LS_KEYS.itemStatus, null);
-    setSelectedCardId(null);
-    setSelectedBillId(null);
-  }, []);
+  // Remove uma conexão específica (ex: parou de usar aquele cartão, ou
+  // quer reconectar do zero por algum erro). Os cartões e o status
+  // guardados em cache são só reconstruídos no próximo "Buscar faturas" —
+  // aqui só tiramos a conexão da lista.
+  const removeBankItem = useCallback(
+    (itemId) => {
+      saveBankItems(bankItems.filter((b) => b.itemId !== itemId));
+      const nextCards = creditCards.filter((c) => c.bankItemId !== itemId);
+      setCreditCards(nextCards);
+      lsSet(LS_KEYS.creditCards, nextCards);
+      const nextStatuses = itemStatuses.filter((s) => s.itemId !== itemId);
+      setItemStatuses(nextStatuses);
+      lsSet(LS_KEYS.itemStatus, nextStatuses);
+      setSelectedCardId(null);
+      setSelectedBillId(null);
+    },
+    [bankItems, creditCards, itemStatuses, saveBankItems]
+  );
 
   /* -------------------- cartão de crédito (faturas) ------------------- */
+  // Busca cartões de TODAS as conexões (Itaú, Nubank, etc — uma por
+  // bankItem) e junta tudo numa lista só. Cada cartão/status carrega
+  // qual bankItemId (e label) ele veio, pra saber de qual banco é.
   const fetchCreditCards = useCallback(async () => {
-    if (!bankItemId) return;
+    if (bankItems.length === 0) return;
     setCcStatus("loading");
     setError("");
     try {
-      const res = await fetch(`/api/credit-cards?itemId=${encodeURIComponent(bankItemId)}`);
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`;
-        try {
-          const body = await res.json();
-          if (body?.error) detail = body.error;
-        } catch (_) {}
-        throw new Error(`Não consegui buscar os cartões de crédito (${detail})`);
+      // Cada banco é buscado isoladamente — se um falhar (ex: Nubank sem
+      // acesso liberado ainda), o outro continua aparecendo normalmente.
+      const results = await Promise.all(
+        bankItems.map(async (b) => {
+          try {
+            const res = await fetch(`/api/credit-cards?itemId=${encodeURIComponent(b.itemId)}`);
+            if (!res.ok) {
+              let detail = `HTTP ${res.status}`;
+              try {
+                const body = await res.json();
+                if (body?.error) detail = body.error;
+              } catch (_) {}
+              throw new Error(detail);
+            }
+            const { cards, itemStatus } = await res.json();
+            return {
+              cards: cards.map((c) => ({ ...c, bankItemId: b.itemId, bankLabel: b.label })),
+              itemStatus: itemStatus ? { ...itemStatus, itemId: b.itemId, label: b.label } : null,
+              error: null,
+            };
+          } catch (err) {
+            console.error(`Falha ao buscar cartões de ${b.label}:`, err.message);
+            return { cards: [], itemStatus: null, error: `${b.label}: ${err.message}` };
+          }
+        })
+      );
+
+      const allCards = results.flatMap((r) => r.cards);
+      const allStatuses = results.map((r) => r.itemStatus).filter(Boolean);
+      const errors = results.map((r) => r.error).filter(Boolean);
+      setCreditCards(allCards);
+      lsSet(LS_KEYS.creditCards, allCards);
+      setItemStatuses(allStatuses);
+      lsSet(LS_KEYS.itemStatus, allStatuses);
+      if (allCards.length > 0) setSelectedCardId((id) => id || allCards[0].id);
+      if (errors.length > 0) {
+        setError(`Não consegui buscar os cartões de: ${errors.join(" · ")}`);
       }
-      const { cards, itemStatus: nextItemStatus } = await res.json();
-      setCreditCards(cards);
-      lsSet(LS_KEYS.creditCards, cards);
-      setItemStatus(nextItemStatus || null);
-      lsSet(LS_KEYS.itemStatus, nextItemStatus || null);
-      if (cards.length > 0) setSelectedCardId((id) => id || cards[0].id);
     } catch (e) {
       console.error(e);
       setError(e.message || "Não consegui buscar os cartões de crédito.");
     } finally {
       setCcStatus("idle");
     }
-  }, [bankItemId]);
+  }, [bankItems]);
 
   /* -------------------- conexão bancária (Pluggy) -------------------- */
-  // Usada só na primeira conexão. Itens do Meu Pluggy sincronizam sozinhos
-  // uma vez por dia, então NUNCA reabrimos esse widget em modo "update" —
-  // isso não é suportado para esse tipo de conector (veja handleBankAction).
+  // O widget "Meu Pluggy" só deixa escolher UM banco por conexão (é seleção
+  // única entre Itaú/Nubank/etc, não múltipla) — então essa função é
+  // chamada uma vez por banco, sempre ADICIONANDO uma conexão nova à
+  // lista, nunca substituindo. Itens do Meu Pluggy sincronizam sozinhos
+  // uma vez por dia, então NUNCA reabrimos esse widget em modo "update"
+  // pra um item já existente — isso não é suportado por esse conector.
   const connectBank = useCallback(async () => {
     setError("");
     setBankStatus("connecting");
@@ -487,9 +532,13 @@ export default function FinancasApp() {
         onSuccess: (itemData) => {
           const newItemId = itemData?.item?.id;
           if (newItemId) {
-            setBankItemId(newItemId);
-            lsSet(LS_KEYS.bankItemId, newItemId);
-            importTransactions(newItemId);
+            const defaultLabel = `Banco ${bankItems.length + 1}`;
+            const label = (window.prompt(
+              "Como quer chamar essa conexão? (ex: Itaú, Nubank)",
+              defaultLabel
+            ) || defaultLabel).trim() || defaultLabel;
+            saveBankItems([...bankItems, { itemId: newItemId, label }]);
+            importTransactions([newItemId]);
           } else {
             setBankStatus("idle");
           }
@@ -510,28 +559,42 @@ export default function FinancasApp() {
       setBankStatus("idle");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bankItemId]);
+  }, [bankItems, saveBankItems]);
 
-  const importTransactions = useCallback(async (itemId) => {
+  const importTransactions = useCallback(async (itemIds) => {
     setBankStatus("importing");
     setError("");
     try {
       const from = daysAgoISO(90);
       const to = todayISO();
-      const res = await fetch(
-        `/api/transactions?itemId=${encodeURIComponent(itemId)}&from=${from}&to=${to}`
+      // Cada conexão é buscada isoladamente — se uma falhar, as outras
+      // continuam sendo importadas normalmente.
+      const results = await Promise.all(
+        itemIds.map(async (itemId) => {
+          try {
+            const res = await fetch(
+              `/api/transactions?itemId=${encodeURIComponent(itemId)}&from=${from}&to=${to}`
+            );
+            if (!res.ok) {
+              let detail = `HTTP ${res.status}`;
+              try {
+                const body = await res.json();
+                if (body?.error) detail = body.error;
+              } catch (_) {
+                // resposta não era JSON, mantém o status HTTP como detalhe
+              }
+              throw new Error(detail);
+            }
+            const { transactions } = await res.json();
+            return { transactions, error: null };
+          } catch (err) {
+            console.error(`Falha ao buscar transações do item ${itemId}:`, err.message);
+            return { transactions: [], error: err.message };
+          }
+        })
       );
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`;
-        try {
-          const body = await res.json();
-          if (body?.error) detail = body.error;
-        } catch (_) {
-          // resposta não era JSON, mantém o status HTTP como detalhe
-        }
-        throw new Error(`Não consegui buscar as transações do banco (${detail})`);
-      }
-      const { transactions } = await res.json();
+      const transactions = results.flatMap((r) => r.transactions);
+      const fetchErrors = results.map((r) => r.error).filter(Boolean);
 
       // Evita sugerir de novo transações que já foram importadas antes
       // (heurística simples: mesma data + mesmo valor + mesma descrição).
@@ -594,6 +657,9 @@ export default function FinancasApp() {
       savePending(merged);
       setImportCandidates(merged);
       setBankStatus("reviewing");
+      if (fetchErrors.length > 0) {
+        setError(`Não consegui buscar lançamentos de uma das conexões: ${fetchErrors.join(" · ")}`);
+      }
     } catch (e) {
       console.error(e);
       setError(e.message || "Não consegui importar as transações.");
@@ -650,15 +716,14 @@ export default function FinancasApp() {
   }, [pendingItems]);
 
   // Itens do Meu Pluggy sincronizam sozinhos uma vez por dia — não faz
-  // sentido reabrir o widget de conexão pra "atualizar". Se já tem banco
-  // conectado, o botão só busca as transações mais recentes direto na API.
-  const handleBankAction = useCallback(() => {
-    if (bankItemId) {
-      importTransactions(bankItemId);
-    } else {
-      connectBank();
+  // sentido reabrir o widget de conexão pra "atualizar" um banco já
+  // conectado. Esse botão busca as transações mais recentes de TODAS as
+  // conexões de uma vez, direto na API.
+  const refreshAllBanks = useCallback(() => {
+    if (bankItems.length > 0) {
+      importTransactions(bankItems.map((b) => b.itemId));
     }
-  }, [bankItemId, importTransactions, connectBank]);
+  }, [bankItems, importTransactions]);
 
   /* -------------------- derived data -------------------- */
   // `inPeriod` traz TUDO (despesas e entradas) — usado no Histórico.
@@ -976,7 +1041,7 @@ export default function FinancasApp() {
 
           {tab === "card" && (
             <CreditCardsView
-              bankItemId={bankItemId}
+              hasBank={bankItems.length > 0}
               cards={creditCards}
               status={ccStatus}
               onFetch={fetchCreditCards}
@@ -984,7 +1049,7 @@ export default function FinancasApp() {
               onSelectCard={setSelectedCardId}
               selectedBillId={selectedBillId}
               onSelectBill={setSelectedBillId}
-              itemStatus={itemStatus}
+              itemStatuses={itemStatuses}
             />
           )}
 
@@ -993,14 +1058,15 @@ export default function FinancasApp() {
               budgets={budgets}
               income={income}
               onSave={saveConfig}
-              bankItemId={bankItemId}
+              bankItems={bankItems}
               bankStatus={bankStatus}
-              onConnectBank={handleBankAction}
+              onConnectBank={connectBank}
+              onRefreshAll={refreshAllBanks}
+              onRemoveBankItem={removeBankItem}
               customCategories={customCategories}
               onAddCategory={addCustomCategory}
               onRemoveCategory={removeCustomCategory}
               onResetData={resetAllData}
-              onResetBankConnection={resetBankConnection}
             />
           )}
         </div>
@@ -1436,7 +1502,7 @@ function InvestSummaryCard({ label, value, meta }) {
 /* Credit card (Cartão de Crédito) view                                */
 /* ------------------------------------------------------------------ */
 function CreditCardsView({
-  bankItemId,
+  hasBank,
   cards,
   status,
   onFetch,
@@ -1444,7 +1510,7 @@ function CreditCardsView({
   onSelectCard,
   selectedBillId,
   onSelectBill,
-  itemStatus,
+  itemStatuses,
 }) {
   const loading = status === "loading";
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
@@ -1507,7 +1573,7 @@ function CreditCardsView({
     0
   );
 
-  if (!bankItemId) {
+  if (!hasBank) {
     return (
       <div style={{ textAlign: "center", padding: "40px 10px", color: MUTED, fontSize: 13 }}>
         Conecte seu banco em Config primeiro — a leitura de faturas usa a
@@ -1541,26 +1607,29 @@ function CreditCardsView({
         {loading ? "Buscando faturas…" : cards.length > 0 ? "Atualizar faturas" : "Buscar faturas"}
       </button>
 
-      {itemStatus && (
-        <div
-          style={{
-            fontSize: 11,
-            color: itemStatus.status === "UPDATED" ? MUTED : CORAL,
-            textAlign: "center",
-            marginTop: -10,
-            marginBottom: 16,
-          }}
-        >
-          {ITEM_STATUS_LABEL[itemStatus.status] || itemStatus.status || "Status da conexão desconhecido"}
-          {itemStatus.lastUpdatedAt
-            ? ` · última sincronização ${new Date(itemStatus.lastUpdatedAt).toLocaleString("pt-BR", {
-                day: "2-digit",
-                month: "2-digit",
-                year: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}`
-            : ""}
+      {itemStatuses.length > 0 && (
+        <div style={{ marginTop: -10, marginBottom: 16 }}>
+          {itemStatuses.map((s) => (
+            <div
+              key={s.itemId}
+              style={{
+                fontSize: 11,
+                color: s.status === "UPDATED" ? MUTED : CORAL,
+                textAlign: "center",
+              }}
+            >
+              {s.label}: {ITEM_STATUS_LABEL[s.status] || s.status || "Status da conexão desconhecido"}
+              {s.lastUpdatedAt
+                ? ` · última sincronização ${new Date(s.lastUpdatedAt).toLocaleString("pt-BR", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}`
+                : ""}
+            </div>
+          ))}
         </div>
       )}
 
@@ -1776,14 +1845,15 @@ function SettingsView({
   budgets,
   income,
   onSave,
-  bankItemId,
+  bankItems,
   bankStatus,
   onConnectBank,
+  onRefreshAll,
+  onRemoveBankItem,
   customCategories,
   onAddCategory,
   onRemoveCategory,
   onResetData,
-  onResetBankConnection,
 }) {
   const [localBudgets, setLocalBudgets] = useState(budgets);
   const [localIncome, setLocalIncome] = useState(income || "");
@@ -1792,7 +1862,7 @@ function SettingsView({
   const [newCatKind, setNewCatKind] = useState("expense"); // "expense" | "income"
   const [newCatDiaDia, setNewCatDiaDia] = useState(false);
   const [resetDone, setResetDone] = useState(false);
-  const [itemIdCopied, setItemIdCopied] = useState(false);
+  const [copiedItemId, setCopiedItemId] = useState(null);
 
   // Quando uma categoria personalizada é adicionada/removida, CATEGORY_LIST
   // muda — garante que o formulário de orçamento tenha uma linha (com 0)
@@ -1839,24 +1909,23 @@ function SettingsView({
     setTimeout(() => setResetDone(false), 2200);
   };
 
-  const handleCopyItemId = async () => {
-    if (!bankItemId) return;
+  const handleCopyItemId = async (itemId) => {
     try {
-      await navigator.clipboard.writeText(bankItemId);
-      setItemIdCopied(true);
-      setTimeout(() => setItemIdCopied(false), 2000);
+      await navigator.clipboard.writeText(itemId);
+      setCopiedItemId(itemId);
+      setTimeout(() => setCopiedItemId((id) => (id === itemId ? null : id)), 2000);
     } catch (_) {
       // Clipboard API pode falhar (ex: sem HTTPS ou sem permissão) — sem
       // fallback, o ID continua visível na tela pra copiar manualmente.
     }
   };
 
-  const handleResetBankConnection = () => {
+  const handleRemoveBankItem = (itemId, label) => {
     const ok = window.confirm(
-      "Isso esquece a conexão bancária atual (você vai precisar logar de novo no Meu Pluggy). Os gastos, entradas e categorias já salvos continuam intactos. Continuar?"
+      `Esquecer a conexão "${label}"? Os gastos, entradas e categorias já salvos continuam intactos.`
     );
     if (!ok) return;
-    onResetBankConnection();
+    onRemoveBankItem(itemId);
   };
 
   const busy = bankStatus === "connecting" || bankStatus === "importing";
@@ -1867,42 +1936,71 @@ function SettingsView({
       <Card>
         <div style={{ padding: "14px" }}>
           <div style={{ fontSize: 13, marginBottom: 10, color: INK }}>
-            {bankItemId
-              ? "Banco conectado. Você pode atualizar os lançamentos quando quiser."
-              : "Conecte o Itaú ou o Nubank pra importar os gastos automaticamente, via Pluggy."}
+            {bankItems.length === 0
+              ? "Conecte o Itaú ou o Nubank pra importar os gastos automaticamente, via Pluggy."
+              : "O widget do Meu Pluggy só deixa escolher um banco por vez — cada banco conectado vira uma conexão própria aqui embaixo."}
           </div>
 
-          {bankItemId && (
-            <button
-              onClick={handleCopyItemId}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                width: "100%",
-                background: "#F5F1E5",
-                border: `1px solid ${PAPER_LINE}`,
-                borderRadius: 6,
-                padding: "8px 10px",
-                marginBottom: 10,
-                textAlign: "left",
-              }}
-            >
-              {itemIdCopied ? <Check size={13} color={TEAL} /> : <Copy size={13} color={MUTED} />}
-              <span
-                style={{
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 11,
-                  color: MUTED,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  flex: 1,
-                }}
-              >
-                {itemIdCopied ? "Copiado — cole no Explorador de execuções da Pluggy" : bankItemId}
-              </span>
-            </button>
+          {bankItems.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              {bankItems.map((b) => (
+                <div
+                  key={b.itemId}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "#F5F1E5",
+                    border: `1px solid ${PAPER_LINE}`,
+                    borderRadius: 6,
+                    padding: "8px 10px",
+                    marginBottom: 6,
+                  }}
+                >
+                  <button
+                    onClick={() => handleCopyItemId(b.itemId)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      flex: 1,
+                      minWidth: 0,
+                      background: "none",
+                      border: "none",
+                      textAlign: "left",
+                    }}
+                  >
+                    {copiedItemId === b.itemId ? (
+                      <Check size={13} color={TEAL} />
+                    ) : (
+                      <Copy size={13} color={MUTED} />
+                    )}
+                    <span style={{ fontSize: 12, fontWeight: 600, color: INK, flexShrink: 0 }}>
+                      {b.label}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontSize: 10.5,
+                        color: MUTED,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {copiedItemId === b.itemId ? "Copiado" : b.itemId}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => handleRemoveBankItem(b.itemId, b.label)}
+                    aria-label={`Esquecer conexão ${b.label}`}
+                    style={{ background: "none", border: "none", color: MUTED, padding: 4, flexShrink: 0 }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
 
           <button
@@ -1914,9 +2012,9 @@ function SettingsView({
               alignItems: "center",
               justifyContent: "center",
               gap: 8,
-              background: bankItemId ? "#F5F1E5" : TEAL,
-              color: bankItemId ? INK : CREAM_TEXT,
-              border: bankItemId ? `1px solid ${PAPER_LINE}` : "none",
+              background: bankItems.length > 0 ? "#F5F1E5" : TEAL,
+              color: bankItems.length > 0 ? INK : CREAM_TEXT,
+              border: bankItems.length > 0 ? `1px solid ${PAPER_LINE}` : "none",
               borderRadius: 8,
               padding: "12px",
               fontSize: 13.5,
@@ -1924,46 +2022,38 @@ function SettingsView({
               opacity: busy ? 0.6 : 1,
             }}
           >
-            {bankItemId ? <RefreshCw size={16} /> : <Landmark size={16} />}
+            <Landmark size={16} />
             {bankStatus === "connecting"
               ? "Abrindo conexão…"
-              : bankStatus === "importing"
-              ? "Buscando lançamentos…"
-              : bankItemId
-              ? "Buscar novos lançamentos"
+              : bankItems.length > 0
+              ? "Adicionar outro banco"
               : "Conectar banco"}
           </button>
 
-          {bankItemId && (
-            <>
-              <div style={{ fontSize: 11, color: MUTED, marginTop: 12, marginBottom: 6 }}>
-                Adicionou um banco novo no Meu Pluggy depois de conectar aqui? Itens já
-                conectados não enxergam bancos adicionados depois — é preciso esquecer
-                essa conexão e autorizar de novo.
-              </div>
-              <button
-                onClick={handleResetBankConnection}
-                disabled={busy}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  background: "none",
-                  color: BRASS,
-                  border: `1px solid ${BRASS}`,
-                  borderRadius: 8,
-                  padding: "10px",
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  opacity: busy ? 0.6 : 1,
-                }}
-              >
-                <RefreshCw size={14} />
-                Reconectar do zero (nova conexão)
-              </button>
-            </>
+          {bankItems.length > 0 && (
+            <button
+              onClick={onRefreshAll}
+              disabled={busy}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                background: "none",
+                color: TEAL,
+                border: `1px solid ${TEAL}`,
+                borderRadius: 8,
+                padding: "12px",
+                fontSize: 13.5,
+                fontWeight: 600,
+                marginTop: 8,
+                opacity: busy ? 0.6 : 1,
+              }}
+            >
+              <RefreshCw size={16} />
+              {bankStatus === "importing" ? "Buscando lançamentos…" : "Buscar novos lançamentos"}
+            </button>
           )}
         </div>
       </Card>
