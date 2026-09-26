@@ -1563,6 +1563,17 @@ function CreditCardsView({
     const suffix = `${String(installmentNumber).padStart(2, "0")}/${String(totalInstallments).padStart(2, "0")}`;
     return description.endsWith(suffix) ? description.slice(0, -suffix.length) : description;
   };
+  // A versão já faturada de uma compra pode vir com o nome do
+  // estabelecimento sem truncar (ex: "adidas FO Madureira"), enquanto a
+  // prevista ainda em aberto vem truncada pra caber o sufixo de parcela
+  // (ex: "adidas FO Madureir01/03") — comparar as duas por igualdade
+  // exata falha por causa disso. Compara só o prefixo em comum.
+  const descriptionsMatch = (a, b) => {
+    if (!a || !b) return false;
+    const len = Math.min(a.length, b.length);
+    if (len < 6) return a === b;
+    return a.slice(0, len) === b.slice(0, len);
+  };
   const effectiveCycleKey = (tx) => {
     const rawKey = cycleMonthKey(tx.date || "");
     if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
@@ -1573,14 +1584,19 @@ function CreditCardsView({
       tx.installmentNumber,
       tx.totalInstallments
     );
+    // Compara só descrição (sem sufixo, por prefixo) + total de parcelas —
+    // nada de exigir valor idêntico, que pode falhar por imprecisão de
+    // ponto flutuante ou juro embutido variando centavo a centavo entre
+    // parcelas. Number(...) nos dois lados evita "4" (texto) !== 4.
     const billedSiblings = allCardTransactions.filter(
       (o) =>
         o.billId &&
         o.installmentNumber &&
-        o.totalInstallments === tx.totalInstallments &&
-        Math.abs(o.amount) === Math.abs(tx.amount) &&
-        stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments) ===
+        Number(o.totalInstallments) === Number(tx.totalInstallments) &&
+        descriptionsMatch(
+          stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments),
           txBaseDescription
+        )
     );
     if (billedSiblings.length === 0) {
       return rawKey;
