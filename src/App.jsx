@@ -1555,6 +1555,9 @@ function CreditCardsView({
 }) {
   const loading = status === "loading";
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
+  // Diagnóstico temporário — investigando parcelas caindo na fatura
+  // errada quando há vários meses de parcelamento pela frente.
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
 
   // O dia em que a fatura fecha muda de banco pra banco (Itaú fecha dia 3,
   // Nubank fecha dia 23, ciclo de 24/mês a 23/mês seguinte) — configurado
@@ -1638,6 +1641,40 @@ function CreditCardsView({
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
   };
 
+  // Diagnóstico temporário — mesma lógica do effectiveCycleKey, mas
+  // devolvendo o "porquê" (qual âncora foi usada, ou se caiu no
+  // fallback da data bruta) pra investigar caso a caso com a usuária.
+  const anchorDebugInfo = (tx) => {
+    if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
+      return "sem parcelamento";
+    }
+    if ((tx.date || "").slice(0, 10) <= today) {
+      return "data já realizada (<= hoje), usa data própria";
+    }
+    const txBaseDescription = stripInstallmentSuffix(
+      tx.description,
+      tx.installmentNumber,
+      tx.totalInstallments
+    );
+    const realizedSiblings = allCardTransactions.filter(
+      (o) =>
+        (o.date || "").slice(0, 10) <= today &&
+        o.installmentNumber &&
+        Number(o.totalInstallments) === Number(tx.totalInstallments) &&
+        descriptionsMatch(
+          stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments),
+          txBaseDescription
+        )
+    );
+    if (realizedSiblings.length === 0) {
+      return "nenhuma parcela irmã já realizada — usa data própria (raw)";
+    }
+    const anchor = realizedSiblings.reduce((a, b) =>
+      b.installmentNumber > a.installmentNumber ? b : a
+    );
+    return `âncora: parcela ${anchor.installmentNumber}/${anchor.totalInstallments} em ${(anchor.date || "").slice(0, 10)} (ciclo ${cycleMonthKey(anchor.date || "")})`;
+  };
+
   // Na Pluggy, pra conta de cartão de crédito, valor positivo é compra e
   // valor negativo é pagamento/estorno (ex: "Pagamento recebido",
   // "DEVOLUCAO SALDO CREDOR"). Um pagamento sempre quita a fatura
@@ -1663,6 +1700,10 @@ function CreditCardsView({
   const billTransactions = selectedCycleKeys
     .flatMap((k) => cycleGroups.get(k) || [])
     .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const displayedTransactions = showDiagnostic
+    ? [...allCardTransactions].sort((a, b) => new Date(b.date) - new Date(a.date))
+    : billTransactions;
 
   const periodTotal = billTransactions.reduce((s, tx) => s + Math.abs(tx.amount), 0);
 
@@ -1874,20 +1915,38 @@ function CreditCardsView({
             </div>
           )}
 
-          <SectionLabel style={{ marginTop: 22 }}>
-            {isCurrentCycle
-              ? "Lançamentos · fatura em aberto"
-              : isFutureCycle
-              ? "Lançamentos · ainda não fechou"
-              : "Lançamentos"}
-          </SectionLabel>
-          {billTransactions.length === 0 ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 22 }}>
+            <SectionLabel style={{ marginTop: 0 }}>
+              {showDiagnostic
+                ? "Lançamentos · tudo, sem separar por fatura (diagnóstico)"
+                : isCurrentCycle
+                ? "Lançamentos · fatura em aberto"
+                : isFutureCycle
+                ? "Lançamentos · ainda não fechou"
+                : "Lançamentos"}
+            </SectionLabel>
+            <button
+              onClick={() => setShowDiagnostic((v) => !v)}
+              style={{
+                background: "none",
+                border: "none",
+                color: TEAL,
+                fontSize: 11,
+                fontWeight: 600,
+                textDecoration: "underline",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {showDiagnostic ? "Ver por fatura" : "Ver tudo (diagnóstico)"}
+            </button>
+          </div>
+          {displayedTransactions.length === 0 ? (
             <div style={{ textAlign: "center", padding: "20px 10px", color: MUTED, fontSize: 13 }}>
               Nenhum lançamento encontrado nesse período.
             </div>
           ) : (
             <Card>
-              {billTransactions.map((tx, i) => (
+              {displayedTransactions.map((tx, i) => (
                 <div
                   key={tx.id}
                   style={{
@@ -1895,7 +1954,7 @@ function CreditCardsView({
                     alignItems: "center",
                     gap: 10,
                     padding: "12px 14px",
-                    borderBottom: i === billTransactions.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                    borderBottom: i === displayedTransactions.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -1906,6 +1965,13 @@ function CreditCardsView({
                         ? ` · parcela ${tx.installmentNumber}/${tx.totalInstallments}`
                         : ""}
                     </div>
+                    {showDiagnostic && (
+                      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: CORAL, marginTop: 2 }}>
+                        billId: {tx.billId ? "sim" : "não"} · ciclo calculado: {effectiveCycleKey(tx)}
+                        <br />
+                        {anchorDebugInfo(tx)}
+                      </div>
+                    )}
                   </div>
                   <div
                     style={{
