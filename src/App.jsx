@@ -1589,15 +1589,21 @@ function CreditCardsView({
   // O número da parcela vem colado no próprio texto da descrição (ex:
   // "KOGUT PARTICIPACOE03/04", "adidas FO Madureir01/03") — cada parcela
   // tem uma descrição levemente diferente por causa disso, então nunca
-  // batiam numa comparação direta. Tira esse sufixo "NN/NN" do final antes
+  // batiam numa comparação direta. Tira esse sufixo "N/N" do final antes
   // de comparar duas parcelas da mesma compra. A versão já faturada pode
   // vir sem truncar (ex: "adidas FO Madureira") enquanto a ainda em
   // aberto vem truncada pra caber o sufixo — por isso compara só o
-  // prefixo em comum, não igualdade exata.
+  // prefixo em comum, não igualdade exata. Bancos diferentes formatam o
+  // sufixo diferente (com zero à esquerda, "05/09", ou sem, "5/9") —
+  // tenta os dois formatos, senão a comparação nunca bate e a parcela
+  // âncora nunca é encontrada.
   const stripInstallmentSuffix = (description, installmentNumber, totalInstallments) => {
     if (!description || !installmentNumber || !totalInstallments) return description || "";
-    const suffix = `${String(installmentNumber).padStart(2, "0")}/${String(totalInstallments).padStart(2, "0")}`;
-    return description.endsWith(suffix) ? description.slice(0, -suffix.length) : description;
+    const padded = `${String(installmentNumber).padStart(2, "0")}/${String(totalInstallments).padStart(2, "0")}`;
+    const unpadded = `${installmentNumber}/${totalInstallments}`;
+    if (description.endsWith(padded)) return description.slice(0, -padded.length);
+    if (description.endsWith(unpadded)) return description.slice(0, -unpadded.length);
+    return description;
   };
   const descriptionsMatch = (a, b) => {
     if (!a || !b) return false;
