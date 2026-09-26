@@ -860,7 +860,7 @@ export default function FinancasApp() {
     <div
       style={{
         minHeight: "100vh",
-        background: "red",
+        background: PAPER,
         fontFamily: "'IBM Plex Sans', sans-serif",
         color: INK,
         display: "flex",
@@ -1529,6 +1529,7 @@ function CreditCardsView({
   // (critério confirmado pela usuária — balanceCloseDate da Pluggy não
   // batia com isso).
   const OPEN_BILL_ID = "__open__";
+  const ALL_ID = "__all__";
   const FUTURE_PREFIX = "__future__:";
   const BILL_CLOSE_DAY = 3;
 
@@ -1632,11 +1633,14 @@ function CreditCardsView({
     ? effectiveBillId.slice(FUTURE_PREFIX.length)
     : null;
 
-  const billTransactions = effectiveFutureCycle
-    ? cycleGroups.get(effectiveFutureCycle) || []
-    : effectiveBillId === OPEN_BILL_ID
-    ? cycleGroups.get(currentCycleKey) || []
-    : (selectedCard?.transactions || []).filter((tx) => tx.billId === effectiveBillId);
+  const billTransactions =
+    effectiveBillId === ALL_ID
+      ? [...allCardTransactions].sort((a, b) => new Date(b.date) - new Date(a.date))
+      : effectiveFutureCycle
+      ? cycleGroups.get(effectiveFutureCycle) || []
+      : effectiveBillId === OPEN_BILL_ID
+      ? cycleGroups.get(currentCycleKey) || []
+      : (selectedCard?.transactions || []).filter((tx) => tx.billId === effectiveBillId);
 
   const openInvoiceTotal = (cycleGroups.get(currentCycleKey) || []).reduce(
     (s, tx) => s + Math.abs(tx.amount),
@@ -1783,6 +1787,24 @@ function CreditCardsView({
           <SectionLabel style={{ marginTop: 22 }}>Faturas</SectionLabel>
           <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto", flexShrink: 0 }}>
             <button
+              onClick={() => onSelectBill(ALL_ID)}
+              style={{
+                flexShrink: 0,
+                background: effectiveBillId === ALL_ID ? INK : "#F5F1E5",
+                color: effectiveBillId === ALL_ID ? CREAM_TEXT : INK,
+                border: `1px solid ${effectiveBillId === ALL_ID ? INK : PAPER_LINE}`,
+                borderRadius: 8,
+                padding: "8px 12px",
+                fontSize: 11.5,
+                textAlign: "left",
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>Tudo</div>
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", marginTop: 1 }}>
+                {allCardTransactions.length} lanç.
+              </div>
+            </button>
+            <button
               onClick={() => onSelectBill(OPEN_BILL_ID)}
               style={{
                 flexShrink: 0,
@@ -1861,7 +1883,9 @@ function CreditCardsView({
           )}
 
           <SectionLabel style={{ marginTop: 22 }}>
-            {effectiveBill
+            {effectiveBillId === ALL_ID
+              ? "Lançamentos · tudo, sem separar por fatura"
+              : effectiveBill
               ? `Lançamentos · vence ${new Date(effectiveBill.dueDate).toLocaleDateString("pt-BR")}`
               : effectiveFutureCycle
               ? `Lançamentos · ${cycleLabel(effectiveFutureCycle)} (ainda não fechou)`
