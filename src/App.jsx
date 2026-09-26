@@ -1542,38 +1542,40 @@ function CreditCardsView({
 
   const openTransactions = (selectedCard?.transactions || []).filter((tx) => !tx.billId);
 
-  // Parcelamentos costumam vir com uma data por parcela (cada linha já no
-  // mês certo, ex: "adidas 02/03" em novembro, "03/03" em dezembro) — mas
-  // às vezes o banco grava a MESMA data (a da compra original) em todas as
-  // parcelas, e aí a data sozinha não diz em qual fatura cada uma cai.
-  // Detectamos isso comparando com as parcelas irmãs da MESMA compra
-  // (descrição/valor/total de parcelas) — olhando TODAS as transações do
-  // cartão, não só as em aberto, porque muitas vezes as parcelas
-  // anteriores já foram pra faturas fechadas e só sobra uma em aberto
-  // (sem outra parcela aberta pra comparar a data). Se as parcelas
-  // encontradas compartilham a mesma data, corrigimos somando
-  // (número da parcela − 1) meses a partir dela — sem essa correção elas
-  // ficariam empilhadas no mês da compra original em vez de espalhadas
-  // nas próprias faturas.
+  // A data que a Pluggy dá pra uma parcela que AINDA não foi faturada é só
+  // uma previsão — e na prática ela vem inconsistente (às vezes pula um
+  // mês, às vezes não é mensal certinho). Só a parcela que JÁ foi
+  // faturada (tem billId) tem uma data real, confirmada pelo banco.
+  // Por isso, pra parcela em aberto, a gente ignora a data dela e ancora
+  // no ciclo de uma parcela irmã já faturada da mesma compra (descrição +
+  // valor + total de parcelas), projetando pela diferença de número de
+  // parcela (parcelamento é sempre sequencial: 1 parcela = 1 ciclo à
+  // frente). Sem parcela irmã já faturada pra ancorar (ex: é a primeira
+  // parcela), cai no fallback de usar a própria data.
   const allCardTransactions = selectedCard?.transactions || [];
   const effectiveCycleKey = (tx) => {
     const rawKey = cycleMonthKey(tx.date || "");
     if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
       return rawKey;
     }
-    const siblings = allCardTransactions.filter(
+    const billedSiblings = allCardTransactions.filter(
       (o) =>
+        o.billId &&
+        o.installmentNumber &&
         o.description === tx.description &&
         o.totalInstallments === tx.totalInstallments &&
         Math.abs(o.amount) === Math.abs(tx.amount)
     );
-    const distinctDates = new Set(siblings.map((s) => (s.date || "").slice(0, 10)));
-    if (siblings.length <= 1 || distinctDates.size > 1) {
+    if (billedSiblings.length === 0) {
       return rawKey;
     }
-    const [y, m] = rawKey.split("-").map(Number);
+    const anchor = billedSiblings.reduce((a, b) =>
+      b.installmentNumber > a.installmentNumber ? b : a
+    );
+    const anchorKey = cycleMonthKey(anchor.date || "");
+    const [y, m] = anchorKey.split("-").map(Number);
     const dt = new Date(y, m - 1, 1);
-    dt.setMonth(dt.getMonth() + (tx.installmentNumber - 1));
+    dt.setMonth(dt.getMonth() + (tx.installmentNumber - anchor.installmentNumber));
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
   };
 
