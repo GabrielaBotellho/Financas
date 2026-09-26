@@ -1675,6 +1675,31 @@ function CreditCardsView({
     return `âncora: parcela ${anchor.installmentNumber}/${anchor.totalInstallments} em ${(anchor.date || "").slice(0, 10)} (ciclo ${cycleMonthKey(anchor.date || "")})`;
   };
 
+  // O Nubank posta o rotativo como lançamentos de verdade na fatura
+  // ("Saldo em rotativo", "Juros de rotativo", "IOF de rotativo") — e,
+  // quando a dívida é finalmente quitada, mais dois de ajuste ("Juros de
+  // dívida encerrada", "Encerramento de dívida", que se cancelam). Nenhum
+  // desses é uma compra nem um pagamento de verdade, então saem tanto do
+  // agrupamento de compras quanto do de pagamentos — e "Saldo em
+  // rotativo" vira a fonte real do card de saldo rotativo, em vez de
+  // estimar.
+  const normalizeDescription = (s) =>
+    (s || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "");
+  const ROTATIVO_ADJUSTMENT_PREFIXES = [
+    "saldo em rotativo",
+    "juros de rotativo",
+    "iof de rotativo",
+    "juros de divida encerrada",
+    "encerramento de divida",
+  ];
+  const isRotativoAdjustment = (tx) => {
+    const d = normalizeDescription(tx.description);
+    return ROTATIVO_ADJUSTMENT_PREFIXES.some((p) => d.startsWith(p));
+  };
+
   // Na Pluggy, pra conta de cartão de crédito, valor positivo é compra e
   // valor negativo é pagamento/estorno (ex: "Pagamento recebido",
   // "DEVOLUCAO SALDO CREDOR"). Um pagamento sempre quita a fatura
@@ -1682,6 +1707,7 @@ function CreditCardsView({
   // específica, então fica de fora do agrupamento por ciclo.
   const cycleGroups = new Map();
   allCardTransactions.forEach((tx) => {
+    if (isRotativoAdjustment(tx)) return;
     if (tx.amount <= 0) return;
     const key = effectiveCycleKey(tx);
     if (!cycleGroups.has(key)) cycleGroups.set(key, []);
@@ -1718,6 +1744,7 @@ function CreditCardsView({
   // que o total daquela fatura, a diferença é o saldo rotativo em aberto.
   const paymentsByRealizedCycle = new Map();
   allCardTransactions.forEach((tx) => {
+    if (isRotativoAdjustment(tx)) return;
     if (tx.amount > 0) return;
     const key = cycleMonthKey(tx.date || "");
     paymentsByRealizedCycle.set(key, (paymentsByRealizedCycle.get(key) || 0) + Math.abs(tx.amount));
@@ -1733,9 +1760,25 @@ function CreditCardsView({
     0
   );
   const paidTowardPreviousCycle = paymentsByRealizedCycle.get(selectedCycleKeys[0]) || 0;
-  const rotativoBalance = isCurrentCycle
-    ? Math.max(0, previousCycleTotal - paidTowardPreviousCycle)
-    : 0;
+  // O Nubank informa o saldo rotativo de verdade (transação "Saldo em
+  // rotativo", postada dentro da fatura fechada anterior) — usa esse
+  // valor real quando existir. Só estima (fatura anterior menos o que
+  // foi pago) quando o banco não manda esse dado, como o Itaú.
+  const realRotativoTx = allCardTransactions.find(
+    (tx) =>
+      normalizeDescription(tx.description).startsWith("saldo em rotativo") &&
+      cycleMonthKey(tx.date || "") === previousCycleKey
+  );
+  const rotativoIsReal = isCurrentCycle && !!realRotativoTx;
+  const rotativoBalance = !isCurrentCycle
+    ? 0
+    : realRotativoTx
+    ? Math.abs(realRotativoTx.amount)
+    : Math.max(0, previousCycleTotal - paidTowardPreviousCycle);
+  // Os juros/IOF de verdade só aparecem DEPOIS que o saldo é quitado
+  // (postados junto com "Encerramento de dívida") — não dá pra saber o
+  // juro real enquanto a dívida ainda está em aberto, então a previsão
+  // de juro diário continua sendo uma estimativa pela taxa configurada.
   const dailyInterest = (rotativoBalance * (Number(rotativoRate) || 0)) / 100 / 30;
 
   useEffect(() => {
@@ -1877,7 +1920,7 @@ function CreditCardsView({
                 <div style={{ padding: "14px", display: "flex", justifyContent: "space-between", gap: 10 }}>
                   <div>
                     <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      Em aberto
+                      Em aberto {rotativoIsReal ? "· valor real" : "· estimado"}
                     </div>
                     <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2, color: CORAL }}>
                       {fmtBRL(rotativoBalance)}
@@ -1885,7 +1928,7 @@ function CreditCardsView({
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      Juros por dia ({rotativoRate}% a.m.)
+                      Juros por dia (estimado, {rotativoRate}% a.m.)
                     </div>
                     <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2, color: CORAL }}>
                       {fmtBRL(dailyInterest)}
@@ -1893,7 +1936,9 @@ function CreditCardsView({
                   </div>
                 </div>
                 <div style={{ fontSize: 11, color: MUTED, padding: "0 14px 12px" }}>
-                  A fatura anterior não foi paga por completo — esse saldo continua rendendo juros até ser quitado.
+                  {rotativoIsReal
+                    ? "Saldo informado pelo próprio banco na fatura anterior. O juro real só aparece depois que a dívida for quitada — o valor por dia acima é uma previsão pela taxa configurada."
+                    : "A fatura anterior não foi paga por completo — esse saldo continua rendendo juros até ser quitado."}
                 </div>
               </Card>
             </>
