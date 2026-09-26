@@ -1577,13 +1577,16 @@ function CreditCardsView({
   const today = todayISO();
 
   // A data que a Pluggy dá pra uma parcela FUTURA (ainda não aconteceu) é
-  // uma previsão — na maioria dos casos (confirmado com dados reais do
-  // Nubank) ela já é confiável e mensal, então usa ela direto. A única
-  // rede de segurança: parcelamento é sempre sequencial (1 parcela = no
-  // mínimo 1 ciclo à frente da anterior), então se a data prevista vier
-  // "pra trás" (no mesmo ciclo da parcela anterior ou antes), força pro
-  // mínimo de 1 ciclo depois da parcela anterior em vez de confiar cegamente
-  // — mas nunca empurra uma data que já está corretamente à frente.
+  // uma previsão — às vezes ela já é confiável e mensal (confirmado com
+  // dados reais do Nubank), às vezes ela "pula" um mês (confirmado com
+  // dados reais do Itaú/KOGUT). A diferença: quando já existem PELO MENOS
+  // DUAS parcelas da mesma compra já realizadas, elas confirmam o ritmo
+  // real (1 parcela = 1 ciclo) — nesse caso extrapola a partir da mais
+  // recente realizada, ignorando a data prevista (que pode estar
+  // adiantada). Com só uma (ou nenhuma) parcela já realizada, não tem
+  // base pra desconfiar da previsão — usa ela direto, só com uma rede de
+  // segurança: nunca deixa cair no mesmo ciclo da parcela anterior ou
+  // antes (parcelamento é sempre sequencial, no mínimo 1 ciclo à frente).
   //
   // O número da parcela vem colado no próprio texto da descrição (ex:
   // "KOGUT PARTICIPACOE03/04", "adidas FO Madureir01/03") — cada parcela
@@ -1629,6 +1632,26 @@ function CreditCardsView({
       tx.installmentNumber,
       tx.totalInstallments
     );
+    const realizedSiblings = allCardTransactions.filter(
+      (o) =>
+        (o.date || "").slice(0, 10) <= today &&
+        o.installmentNumber &&
+        Number(o.totalInstallments) === Number(tx.totalInstallments) &&
+        descriptionsMatch(
+          stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments),
+          txBaseDescription
+        )
+    );
+    if (realizedSiblings.length >= 2) {
+      const anchor = realizedSiblings.reduce((a, b) =>
+        b.installmentNumber > a.installmentNumber ? b : a
+      );
+      const anchorKey = cycleMonthKey(anchor.date || "");
+      const [y, m] = anchorKey.split("-").map(Number);
+      const dt = new Date(y, m - 1, 1);
+      dt.setMonth(dt.getMonth() + (tx.installmentNumber - anchor.installmentNumber));
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+    }
     const previous = allCardTransactions.find(
       (o) =>
         o.installmentNumber === tx.installmentNumber - 1 &&
@@ -1661,6 +1684,22 @@ function CreditCardsView({
       tx.installmentNumber,
       tx.totalInstallments
     );
+    const realizedSiblings = allCardTransactions.filter(
+      (o) =>
+        (o.date || "").slice(0, 10) <= today &&
+        o.installmentNumber &&
+        Number(o.totalInstallments) === Number(tx.totalInstallments) &&
+        descriptionsMatch(
+          stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments),
+          txBaseDescription
+        )
+    );
+    if (realizedSiblings.length >= 2) {
+      const anchor = realizedSiblings.reduce((a, b) =>
+        b.installmentNumber > a.installmentNumber ? b : a
+      );
+      return `${realizedSiblings.length} parcelas já realizadas confirmam o ritmo — âncora: parcela ${anchor.installmentNumber}/${anchor.totalInstallments} em ${(anchor.date || "").slice(0, 10)} (ciclo ${cycleMonthKey(anchor.date || "")}), ignora data própria (raw seria: ${rawKey})`;
+    }
     const previous = allCardTransactions.find(
       (o) =>
         o.installmentNumber === tx.installmentNumber - 1 &&
