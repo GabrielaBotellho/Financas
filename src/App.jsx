@@ -172,6 +172,7 @@ const LS_KEYS = {
   creditCards: "caderneta:creditCards",
   itemStatus: "caderneta:itemStatus",
   rotativoRate: "caderneta:rotativoRate",
+  cardCloseDays: "caderneta:cardCloseDays",
 };
 
 function lsGet(key) {
@@ -302,6 +303,12 @@ export default function FinancasApp() {
   // tem campo de taxa de juros na API), então a usuária informa direto,
   // olhando no app do banco/contrato do cartão.
   const [rotativoRate, setRotativoRate] = useState(() => lsGet(LS_KEYS.rotativoRate) ?? 16);
+  // Dia em que a fatura fecha, por cartão (id da conta) — cada banco tem
+  // um ciclo diferente (Itaú fecha dia 3, Nubank fecha dia 23, etc) e o
+  // balanceCloseDate que a Pluggy retorna já se mostrou não confiável
+  // antes, então isso é configurado manualmente por cartão em vez de
+  // confiar automaticamente no valor da API.
+  const [cardCloseDays, setCardCloseDays] = useState(() => lsGet(LS_KEYS.cardCloseDays) || {});
   // O widget "Meu Pluggy" só deixa escolher UM banco por vez (Itaú OU
   // Nubank), nunca os dois juntos — então cada banco vira uma conexão
   // própria, com seu próprio itemId. bankItems guarda a lista inteira.
@@ -350,6 +357,13 @@ export default function FinancasApp() {
     setRotativoRate(nextRate);
     if (!lsSet(LS_KEYS.rotativoRate, nextRate)) {
       setError("Não consegui salvar a taxa de juros.");
+    }
+  }, []);
+
+  const saveCardCloseDays = useCallback((nextMap) => {
+    setCardCloseDays(nextMap);
+    if (!lsSet(LS_KEYS.cardCloseDays, nextMap)) {
+      setError("Não consegui salvar o dia de fechamento da fatura.");
     }
   }, []);
 
@@ -1068,6 +1082,7 @@ export default function FinancasApp() {
               cursor={cursor}
               viewMode={viewMode}
               rotativoRate={rotativoRate}
+              cardCloseDays={cardCloseDays}
             />
           )}
 
@@ -1078,6 +1093,9 @@ export default function FinancasApp() {
               onSave={saveConfig}
               rotativoRate={rotativoRate}
               onSaveRotativoRate={saveRotativoRate}
+              creditCards={creditCards}
+              cardCloseDays={cardCloseDays}
+              onSaveCardCloseDays={saveCardCloseDays}
               bankItems={bankItems}
               bankStatus={bankStatus}
               onConnectBank={connectBank}
@@ -1533,15 +1551,17 @@ function CreditCardsView({
   cursor,
   viewMode,
   rotativoRate,
+  cardCloseDays,
 }) {
   const loading = status === "loading";
   const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
 
-  // O ciclo da fatura desse cartão fecha no dia 3 e abre no dia 4: uma
-  // compra entre 04/mês e 03/mês seguinte é da fatura do mês seguinte
-  // (critério confirmado pela usuária — balanceCloseDate da Pluggy não
-  // batia com isso).
-  const BILL_CLOSE_DAY = 3;
+  // O dia em que a fatura fecha muda de banco pra banco (Itaú fecha dia 3,
+  // Nubank fecha dia 23, ciclo de 24/mês a 23/mês seguinte) — configurado
+  // manualmente por cartão em Configurações, já que o balanceCloseDate que
+  // a Pluggy retorna se mostrou não confiável antes. Uma compra feita
+  // depois do dia de fechamento é da fatura do mês seguinte.
+  const BILL_CLOSE_DAY = (selectedCard && cardCloseDays[selectedCard.id]) || 3;
   const cycleMonthKey = (dateStr) => {
     const [y, m, d] = dateStr.slice(0, 10).split("-").map(Number);
     if (d <= BILL_CLOSE_DAY) return `${y}-${String(m).padStart(2, "0")}`;
@@ -1917,6 +1937,9 @@ function SettingsView({
   onSave,
   rotativoRate,
   onSaveRotativoRate,
+  creditCards,
+  cardCloseDays,
+  onSaveCardCloseDays,
   bankItems,
   bankStatus,
   onConnectBank,
@@ -1930,6 +1953,7 @@ function SettingsView({
   const [localBudgets, setLocalBudgets] = useState(budgets);
   const [localIncome, setLocalIncome] = useState(income || "");
   const [localRotativoRate, setLocalRotativoRate] = useState(rotativoRate ?? 16);
+  const [localCardCloseDays, setLocalCardCloseDays] = useState(cardCloseDays || {});
   const [saved, setSaved] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatKind, setNewCatKind] = useState("expense"); // "expense" | "income"
@@ -1954,6 +1978,22 @@ function SettingsView({
     });
   }, [customCategories]);
 
+  // Garante uma linha (com o padrão de dia 3) pra cada cartão já
+  // carregado, sem perder o que já foi digitado pra outros.
+  useEffect(() => {
+    setLocalCardCloseDays((cd) => {
+      let changed = false;
+      const merged = { ...cd };
+      creditCards.forEach((c) => {
+        if (!(c.id in merged)) {
+          merged[c.id] = 3;
+          changed = true;
+        }
+      });
+      return changed ? merged : cd;
+    });
+  }, [creditCards]);
+
   const handleSave = () => {
     const cleaned = {};
     Object.keys(localBudgets).forEach((k) => {
@@ -1961,6 +2001,11 @@ function SettingsView({
     });
     onSave(cleaned, Number(localIncome) || 0);
     onSaveRotativoRate(Number(localRotativoRate) || 0);
+    const cleanedCloseDays = {};
+    Object.keys(localCardCloseDays).forEach((id) => {
+      cleanedCloseDays[id] = Number(localCardCloseDays[id]) || 3;
+    });
+    onSaveCardCloseDays(cleanedCloseDays);
     setSaved(true);
     setTimeout(() => setSaved(false), 1600);
   };
@@ -2183,6 +2228,57 @@ function SettingsView({
           </div>
         </div>
       </Card>
+
+      {creditCards.length > 0 && (
+        <>
+          <SectionLabel style={{ marginTop: 22 }}>Dia de fechamento da fatura</SectionLabel>
+          <Card>
+            <div style={{ fontSize: 11, color: MUTED, padding: "10px 14px 4px" }}>
+              Cada banco fecha num dia diferente (ex: Itaú fecha dia 3, Nubank fecha
+              dia 23 — ciclo de 24 de um mês a 23 do outro). Uma compra feita depois
+              desse dia entra na fatura do mês seguinte.
+            </div>
+            {creditCards.map((c, i) => (
+              <div
+                key={c.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: i === creditCards.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                }}
+              >
+                <span style={{ fontSize: 13, flex: 1 }}>
+                  {c.name}
+                  {c.bankLabel ? ` · ${c.bankLabel}` : ""}
+                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={31}
+                  value={localCardCloseDays[c.id] ?? 3}
+                  onChange={(e) =>
+                    setLocalCardCloseDays((cd) => ({ ...cd, [c.id]: e.target.value }))
+                  }
+                  style={{
+                    width: 60,
+                    border: `1px solid ${PAPER_LINE}`,
+                    borderRadius: 6,
+                    padding: "6px 8px",
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 13,
+                    textAlign: "right",
+                    background: PAPER,
+                  }}
+                />
+              </div>
+            ))}
+          </Card>
+        </>
+      )}
 
       <SectionLabel style={{ marginTop: 22 }}>Orçamento por categoria (mensal)</SectionLabel>
       <Card>
