@@ -1704,15 +1704,23 @@ function CreditCardsView({
     return ROTATIVO_ADJUSTMENT_PREFIXES.some((p) => d.startsWith(p));
   };
 
-  // Na Pluggy, pra conta de cartão de crédito, valor positivo é compra e
-  // valor negativo é pagamento/estorno (ex: "Pagamento recebido",
-  // "DEVOLUCAO SALDO CREDOR"). Um pagamento sempre quita a fatura
-  // ANTERIOR (a que já fechou) — não é um lançamento de nenhuma fatura
-  // específica, então fica de fora do agrupamento por ciclo.
+  // Um pagamento de fatura de verdade (valor negativo, ex: "Pagamento
+  // recebido", "DEVOLUCAO SALDO CREDOR") sempre quita a fatura ANTERIOR
+  // (a que já fechou) — não é um lançamento de nenhuma fatura específica,
+  // então fica de fora do agrupamento por ciclo. Só ISSO fica de fora —
+  // um estorno de uma compra específica (ex: "Google G1ai101m" -R$96,99
+  // estornando a compra "Crédito de confiança de Google G1ai101m"
+  // +R$96,99) é um lançamento de verdade da fatura em que caiu, e deve
+  // abater o total normalmente, não desaparecer.
+  const INVOICE_PAYMENT_PREFIXES = ["pagamento recebido", "devolucao saldo credor"];
+  const isInvoicePayment = (tx) => {
+    const d = normalizeDescription(tx.description);
+    return INVOICE_PAYMENT_PREFIXES.some((p) => d.startsWith(p));
+  };
+
   const cycleGroups = new Map();
   allCardTransactions.forEach((tx) => {
-    if (isRotativoAdjustment(tx)) return;
-    if (tx.amount <= 0) return;
+    if (isRotativoAdjustment(tx) || isInvoicePayment(tx)) return;
     const key = effectiveCycleKey(tx);
     if (!cycleGroups.has(key)) cycleGroups.set(key, []);
     cycleGroups.get(key).push(tx);
@@ -1735,7 +1743,7 @@ function CreditCardsView({
     ? [...allCardTransactions].sort((a, b) => new Date(b.date) - new Date(a.date))
     : billTransactions;
 
-  const periodTotal = billTransactions.reduce((s, tx) => s + Math.abs(tx.amount), 0);
+  const periodTotal = billTransactions.reduce((s, tx) => s + tx.amount, 0);
 
   const isCurrentCycle = viewMode === "mes" && selectedCycleKeys[0] === todayCycleKey;
   const isFutureCycle = viewMode === "mes" && selectedCycleKeys[0] > todayCycleKey;
@@ -1748,8 +1756,7 @@ function CreditCardsView({
   // que o total daquela fatura, a diferença é o saldo rotativo em aberto.
   const paymentsByRealizedCycle = new Map();
   allCardTransactions.forEach((tx) => {
-    if (isRotativoAdjustment(tx)) return;
-    if (tx.amount > 0) return;
+    if (!isInvoicePayment(tx)) return;
     const key = cycleMonthKey(tx.date || "");
     paymentsByRealizedCycle.set(key, (paymentsByRealizedCycle.get(key) || 0) + Math.abs(tx.amount));
   });
@@ -1760,7 +1767,7 @@ function CreditCardsView({
   };
   const previousCycleKey = previousCycleKeyOf(selectedCycleKeys[0] || todayCycleKey);
   const previousCycleTotal = (cycleGroups.get(previousCycleKey) || []).reduce(
-    (s, tx) => s + Math.abs(tx.amount),
+    (s, tx) => s + tx.amount,
     0
   );
   const paidTowardPreviousCycle = paymentsByRealizedCycle.get(selectedCycleKeys[0]) || 0;
