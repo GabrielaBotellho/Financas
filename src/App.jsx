@@ -1577,14 +1577,13 @@ function CreditCardsView({
   const today = todayISO();
 
   // A data que a Pluggy dá pra uma parcela FUTURA (ainda não aconteceu) é
-  // só uma previsão — e na prática ela vem inconsistente (às vezes pula um
-  // mês). Só uma parcela que já ACONTECEU (data <= hoje) tem uma data
-  // real e confiável. Por isso, pra parcela ainda futura, a gente ignora
-  // a data dela e ancora no ciclo de uma parcela irmã já realizada da
-  // mesma compra (descrição + total de parcelas), projetando pela
-  // diferença de número de parcela (parcelamento é sempre sequencial: 1
-  // parcela = 1 ciclo à frente). Sem parcela irmã já realizada pra
-  // ancorar, cai no fallback de usar a própria data.
+  // uma previsão — na maioria dos casos (confirmado com dados reais do
+  // Nubank) ela já é confiável e mensal, então usa ela direto. A única
+  // rede de segurança: parcelamento é sempre sequencial (1 parcela = no
+  // mínimo 1 ciclo à frente da anterior), então se a data prevista vier
+  // "pra trás" (no mesmo ciclo da parcela anterior ou antes), força pro
+  // mínimo de 1 ciclo depois da parcela anterior em vez de confiar cegamente
+  // — mas nunca empurra uma data que já está corretamente à frente.
   //
   // O número da parcela vem colado no próprio texto da descrição (ex:
   // "KOGUT PARTICIPACOE03/04", "adidas FO Madureir01/03") — cada parcela
@@ -1611,6 +1610,12 @@ function CreditCardsView({
     if (len < 6) return a === b;
     return a.slice(0, len) === b.slice(0, len);
   };
+  const nextMonthKey = (key) => {
+    const [y, m] = key.split("-").map(Number);
+    const dt = new Date(y, m - 1, 1);
+    dt.setMonth(dt.getMonth() + 1);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+  };
   const effectiveCycleKey = (tx) => {
     const rawKey = cycleMonthKey(tx.date || "");
     if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
@@ -1624,27 +1629,20 @@ function CreditCardsView({
       tx.installmentNumber,
       tx.totalInstallments
     );
-    const realizedSiblings = allCardTransactions.filter(
+    const previous = allCardTransactions.find(
       (o) =>
-        (o.date || "").slice(0, 10) <= today &&
-        o.installmentNumber &&
+        o.installmentNumber === tx.installmentNumber - 1 &&
         Number(o.totalInstallments) === Number(tx.totalInstallments) &&
         descriptionsMatch(
           stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments),
           txBaseDescription
         )
     );
-    if (realizedSiblings.length === 0) {
+    if (!previous) {
       return rawKey;
     }
-    const anchor = realizedSiblings.reduce((a, b) =>
-      b.installmentNumber > a.installmentNumber ? b : a
-    );
-    const anchorKey = cycleMonthKey(anchor.date || "");
-    const [y, m] = anchorKey.split("-").map(Number);
-    const dt = new Date(y, m - 1, 1);
-    dt.setMonth(dt.getMonth() + (tx.installmentNumber - anchor.installmentNumber));
-    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+    const floorKey = nextMonthKey(effectiveCycleKey(previous));
+    return rawKey > floorKey ? rawKey : floorKey;
   };
 
   // Diagnóstico temporário — mesma lógica do effectiveCycleKey, mas
@@ -1657,28 +1655,28 @@ function CreditCardsView({
     if ((tx.date || "").slice(0, 10) <= today) {
       return "data já realizada (<= hoje), usa data própria";
     }
+    const rawKey = cycleMonthKey(tx.date || "");
     const txBaseDescription = stripInstallmentSuffix(
       tx.description,
       tx.installmentNumber,
       tx.totalInstallments
     );
-    const realizedSiblings = allCardTransactions.filter(
+    const previous = allCardTransactions.find(
       (o) =>
-        (o.date || "").slice(0, 10) <= today &&
-        o.installmentNumber &&
+        o.installmentNumber === tx.installmentNumber - 1 &&
         Number(o.totalInstallments) === Number(tx.totalInstallments) &&
         descriptionsMatch(
           stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments),
           txBaseDescription
         )
     );
-    if (realizedSiblings.length === 0) {
-      return "nenhuma parcela irmã já realizada — usa data própria (raw)";
+    if (!previous) {
+      return `sem parcela anterior encontrada — usa data própria (raw: ${rawKey})`;
     }
-    const anchor = realizedSiblings.reduce((a, b) =>
-      b.installmentNumber > a.installmentNumber ? b : a
-    );
-    return `âncora: parcela ${anchor.installmentNumber}/${anchor.totalInstallments} em ${(anchor.date || "").slice(0, 10)} (ciclo ${cycleMonthKey(anchor.date || "")})`;
+    const floorKey = nextMonthKey(effectiveCycleKey(previous));
+    return rawKey > floorKey
+      ? `usa data própria (raw: ${rawKey}), à frente do mínimo (${floorKey})`
+      : `data própria (raw: ${rawKey}) vinha igual/atrás da parcela anterior — usa o mínimo: ${floorKey}`;
   };
 
   // O Nubank posta o rotativo como lançamentos de verdade na fatura
