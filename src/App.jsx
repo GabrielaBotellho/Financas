@@ -176,6 +176,7 @@ const LS_KEYS = {
   cardCloseDays: "caderneta:cardCloseDays",
   cardUnreliableForecast: "caderneta:cardUnreliableForecast",
   monthlyBudgets: "caderneta:monthlyBudgets",
+  monthlyBudgetMeta: "caderneta:monthlyBudgetMeta",
 };
 
 function lsGet(key) {
@@ -322,6 +323,12 @@ export default function FinancasApp() {
   const [monthlyBudgets, setMonthlyBudgets] = useState(
     () => lsGet(LS_KEYS.monthlyBudgets) || {}
   );
+  // Entradas do mês e quanto da fatura do Nubank é pago por outra pessoa —
+  // também por mês ("AAAA-MM"), editados junto do orçamento na aba
+  // Orçamento, pra calcular o saldo disponível pra distribuir.
+  const [monthlyBudgetMeta, setMonthlyBudgetMeta] = useState(
+    () => lsGet(LS_KEYS.monthlyBudgetMeta) || {}
+  );
   // Taxa de juros do rotativo (% ao mês) — a Pluggy não retorna isso (não
   // tem campo de taxa de juros na API), então a usuária informa direto,
   // olhando no app do banco/contrato do cartão.
@@ -414,6 +421,16 @@ export default function FinancasApp() {
       const next = { ...prev, [monthKey]: categoryValues };
       if (!lsSet(LS_KEYS.monthlyBudgets, next)) {
         setError("Não consegui salvar o orçamento do mês.");
+      }
+      return next;
+    });
+  }, []);
+
+  const saveMonthlyBudgetMeta = useCallback((monthKey, meta) => {
+    setMonthlyBudgetMeta((prev) => {
+      const next = { ...prev, [monthKey]: meta };
+      if (!lsSet(LS_KEYS.monthlyBudgetMeta, next)) {
+        setError("Não consegui salvar as entradas/cartões do mês.");
       }
       return next;
     });
@@ -1183,6 +1200,11 @@ export default function FinancasApp() {
               monthlyBudgets={monthlyBudgets}
               budgets={budgets}
               onSaveMonthlyBudget={saveMonthlyBudget}
+              monthlyBudgetMeta={monthlyBudgetMeta}
+              onSaveMonthlyBudgetMeta={saveMonthlyBudgetMeta}
+              creditCards={creditCards}
+              cardCloseDays={cardCloseDays}
+              cardUnreliableForecast={cardUnreliableForecast}
             />
           )}
 
@@ -1478,7 +1500,26 @@ function CategoryRow({ name, spent, budget, color, last }) {
 /* ------------------------------------------------------------------ */
 /* Budget view                                                         */
 /* ------------------------------------------------------------------ */
-function BudgetView({ cursor, viewMode, monthlyBudgets, budgets, onSaveMonthlyBudget }) {
+// Acha o cartão de um banco específico entre os conectados, pelo nome do
+// cartão ou pelo rótulo dado ao conectar (ex: "ITAU...", "Nubank").
+function findCardByBank(creditCards, pattern) {
+  return creditCards.find((c) => pattern.test(c.name || "") || pattern.test(c.bankLabel || ""));
+}
+const NUBANK_PATTERN = /nubank/i;
+const ITAU_PATTERN = /ita[uú]/i;
+
+function BudgetView({
+  cursor,
+  viewMode,
+  monthlyBudgets,
+  budgets,
+  onSaveMonthlyBudget,
+  monthlyBudgetMeta,
+  onSaveMonthlyBudgetMeta,
+  creditCards,
+  cardCloseDays,
+  cardUnreliableForecast,
+}) {
   const monthKey = budgetMonthKey(cursor.y, cursor.m);
   const monthLabel = `${MONTHS_PT[cursor.m]} ${cursor.y}`;
 
@@ -1492,6 +1533,9 @@ function BudgetView({ cursor, viewMode, monthlyBudgets, budgets, onSaveMonthlyBu
     CATEGORY_LIST.forEach((c) => (init[c] = effectiveForMonth(c)));
     return init;
   });
+  const meta = monthlyBudgetMeta[monthKey] || {};
+  const [localIncome, setLocalIncome] = useState(meta.income ?? "");
+  const [localNubankPaidByOther, setLocalNubankPaidByOther] = useState(meta.nubankPaidByOther ?? "");
   const [saved, setSaved] = useState(false);
 
   // Troca os valores em edição quando o mês selecionado muda (setas do
@@ -1500,6 +1544,9 @@ function BudgetView({ cursor, viewMode, monthlyBudgets, budgets, onSaveMonthlyBu
     const init = {};
     CATEGORY_LIST.forEach((c) => (init[c] = effectiveForMonth(c)));
     setLocalValues(init);
+    const m = monthlyBudgetMeta[monthKey] || {};
+    setLocalIncome(m.income ?? "");
+    setLocalNubankPaidByOther(m.nubankPaidByOther ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monthKey]);
 
@@ -1511,50 +1558,143 @@ function BudgetView({ cursor, viewMode, monthlyBudgets, budgets, onSaveMonthlyBu
     );
   }
 
+  // Puxa o valor da fatura de cada cartão direto da mesma conta usada na
+  // aba Cartão (computeCardCycleData), pra nunca divergir — identifica o
+  // cartão do Nubank/Itaú pelo nome ou rótulo do banco.
+  const today = todayISO();
+  const nubankCard = findCardByBank(creditCards, NUBANK_PATTERN);
+  const itauCard = findCardByBank(creditCards, ITAU_PATTERN);
+  const nubankTotal = nubankCard
+    ? computeCardCycleData(nubankCard, {
+        cursor,
+        viewMode,
+        closeDay: cardCloseDays[nubankCard.id] || 3,
+        forecastIsUnreliable: !!cardUnreliableForecast[nubankCard.id],
+        today,
+      }).periodTotal
+    : null;
+  const itauTotal = itauCard
+    ? computeCardCycleData(itauCard, {
+        cursor,
+        viewMode,
+        closeDay: cardCloseDays[itauCard.id] || 3,
+        forecastIsUnreliable: !!cardUnreliableForecast[itauCard.id],
+        today,
+      }).periodTotal
+    : null;
+
+  const income = Number(localIncome) || 0;
+  const nubankPaidByOther = Number(localNubankPaidByOther) || 0;
+  const nubankOwedByMe = Math.max(0, (nubankTotal || 0) - nubankPaidByOther);
+  const saldoDisponivel = income - nubankOwedByMe - (itauTotal || 0);
+
   const handleSave = () => {
     const cleaned = {};
     CATEGORY_LIST.forEach((c) => {
       cleaned[c] = Number(localValues[c]) || 0;
     });
     onSaveMonthlyBudget(monthKey, cleaned);
+    onSaveMonthlyBudgetMeta(monthKey, { income, nubankPaidByOther });
     setSaved(true);
     setTimeout(() => setSaved(false), 1600);
   };
 
   const total = CATEGORY_LIST.reduce((s, c) => s + (Number(localValues[c]) || 0), 0);
 
+  const rowStyle = (last) => ({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    padding: "10px 14px",
+    borderBottom: last ? "none" : `1px solid ${PAPER_LINE}`,
+  });
+  const numberInputStyle = {
+    width: 90,
+    border: `1px solid ${PAPER_LINE}`,
+    borderRadius: 6,
+    padding: "6px 8px",
+    fontFamily: "'IBM Plex Mono', monospace",
+    fontSize: 13,
+    textAlign: "right",
+    background: PAPER,
+  };
+
   return (
     <div>
-      <SectionLabel>Orçamento de {monthLabel}</SectionLabel>
+      <SectionLabel>Resumo de {monthLabel}</SectionLabel>
+      <Card>
+        <div style={rowStyle(false)}>
+          <span style={{ fontSize: 13, flex: 1 }}>Entradas</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={localIncome}
+            onChange={(e) => setLocalIncome(e.target.value)}
+            placeholder="0,00"
+            style={numberInputStyle}
+          />
+        </div>
+        <div style={rowStyle(false)}>
+          <span style={{ fontSize: 13, flex: 1 }}>Cartão Nubank</span>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 }}>
+            {nubankCard ? fmtBRL(nubankTotal) : "—"}
+          </span>
+        </div>
+        <div style={{ ...rowStyle(false), paddingLeft: 24, background: "#F5F1E5" }}>
+          <span style={{ fontSize: 12, color: MUTED, flex: 1 }}>Quanto outra pessoa paga?</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={localNubankPaidByOther}
+            onChange={(e) => setLocalNubankPaidByOther(e.target.value)}
+            placeholder="0,00"
+            style={numberInputStyle}
+          />
+        </div>
+        <div style={rowStyle(true)}>
+          <span style={{ fontSize: 13, flex: 1 }}>Cartão Itaú</span>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 }}>
+            {itauCard ? fmtBRL(itauTotal) : "—"}
+          </span>
+        </div>
+      </Card>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: 14,
+          padding: "12px 14px",
+          background: INK,
+          borderRadius: 8,
+        }}
+      >
+        <span style={{ fontSize: 13, color: CREAM_TEXT, fontWeight: 600 }}>Saldo disponível</span>
+        <span
+          style={{
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: 16,
+            fontWeight: 700,
+            color: saldoDisponivel >= 0 ? "#9ED0B4" : CORAL,
+          }}
+        >
+          {fmtBRL(saldoDisponivel)}
+        </span>
+      </div>
+
+      <SectionLabel style={{ marginTop: 22 }}>Orçamento de {monthLabel}</SectionLabel>
       <Card>
         {CATEGORY_LIST.map((c, i) => (
-          <div
-            key={c}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-              padding: "10px 14px",
-              borderBottom: i === CATEGORY_LIST.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-            }}
-          >
+          <div key={c} style={rowStyle(i === CATEGORY_LIST.length - 1)}>
             <span style={{ fontSize: 13, flex: 1 }}>{c}</span>
             <input
               type="number"
               inputMode="decimal"
               value={localValues[c]}
               onChange={(e) => setLocalValues((v) => ({ ...v, [c]: e.target.value }))}
-              style={{
-                width: 90,
-                border: `1px solid ${PAPER_LINE}`,
-                borderRadius: 6,
-                padding: "6px 8px",
-                fontFamily: "'IBM Plex Mono', monospace",
-                fontSize: 13,
-                textAlign: "right",
-                background: PAPER,
-              }}
+              style={numberInputStyle}
             />
           </div>
         ))}
@@ -1753,36 +1893,12 @@ function InvestSummaryCard({ label, value, meta }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Credit card (Cartão de Crédito) view                                */
+/* Cálculo de ciclo/fatura de cartão de crédito — compartilhado entre   */
+/* a aba Cartão e o resumo da aba Orçamento, pra nunca ter duas contas  */
+/* (potencialmente divergentes) do mesmo valor de fatura.              */
 /* ------------------------------------------------------------------ */
-function CreditCardsView({
-  hasBank,
-  cards,
-  status,
-  onFetch,
-  selectedCardId,
-  onSelectCard,
-  itemStatuses,
-  onSummaryChange,
-  cursor,
-  viewMode,
-  rotativoRate,
-  cardCloseDays,
-  cardUnreliableForecast,
-}) {
-  const loading = status === "loading";
-  const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
-  const forecastIsUnreliable = !!(selectedCard && cardUnreliableForecast[selectedCard.id]);
-  // Diagnóstico temporário — investigando parcelas caindo na fatura
-  // errada quando há vários meses de parcelamento pela frente.
-  const [showDiagnostic, setShowDiagnostic] = useState(false);
-
-  // O dia em que a fatura fecha muda de banco pra banco (Itaú fecha dia 3,
-  // Nubank fecha dia 23, ciclo de 24/mês a 23/mês seguinte) — configurado
-  // manualmente por cartão em Configurações, já que o balanceCloseDate que
-  // a Pluggy retorna se mostrou não confiável antes. Uma compra feita
-  // depois do dia de fechamento é da fatura do mês seguinte.
-  const BILL_CLOSE_DAY = (selectedCard && cardCloseDays[selectedCard.id]) || 3;
+function computeCardCycleData(card, { cursor, viewMode, closeDay, forecastIsUnreliable, today }) {
+  const BILL_CLOSE_DAY = closeDay || 3;
   const cycleMonthKey = (dateStr) => {
     const [y, m, d] = dateStr.slice(0, 10).split("-").map(Number);
     if (d <= BILL_CLOSE_DAY) return `${y}-${String(m).padStart(2, "0")}`;
@@ -1791,36 +1907,8 @@ function CreditCardsView({
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
   };
 
-  const allCardTransactions = selectedCard?.transactions || [];
-  const today = todayISO();
+  const allCardTransactions = card?.transactions || [];
 
-  // A data que a Pluggy dá pra uma parcela FUTURA (ainda não aconteceu) é
-  // uma previsão — em alguns bancos ela já é confiável e mensal
-  // (confirmado com dados reais do Nubank: mesmo "pulando" 2 ciclos entre
-  // a última parcela realizada e a primeira prevista, a previsão em si
-  // está certa), em outros ela "pula" um mês de verdade (confirmado com
-  // dados reais do Itaú: KOGUT e adidas). Não dá pra distinguir isso só
-  // pelo padrão da data — os dois casos reais são estruturalmente
-  // idênticos e pedem respostas opostas — então é configurável por
-  // cartão em Configurações (cardUnreliableForecast). Só quando o
-  // cartão está marcado como "previsão não confiável" é que, havendo ao
-  // menos 1 parcela já realizada, ela vira âncora e a previsão é
-  // ignorada. Nos demais casos (cartão confiável, ou nenhuma parcela
-  // ainda realizada), usa a data prevista direto, só com uma rede de
-  // segurança: nunca deixa cair no mesmo ciclo da parcela anterior ou
-  // antes (parcelamento é sempre sequencial, no mínimo 1 ciclo à frente).
-  //
-  // O número da parcela vem colado no próprio texto da descrição (ex:
-  // "KOGUT PARTICIPACOE03/04", "adidas FO Madureir01/03") — cada parcela
-  // tem uma descrição levemente diferente por causa disso, então nunca
-  // batiam numa comparação direta. Tira esse sufixo "N/N" do final antes
-  // de comparar duas parcelas da mesma compra. A versão já faturada pode
-  // vir sem truncar (ex: "adidas FO Madureira") enquanto a ainda em
-  // aberto vem truncada pra caber o sufixo — por isso compara só o
-  // prefixo em comum, não igualdade exata. Bancos diferentes formatam o
-  // sufixo diferente (com zero à esquerda, "05/09", ou sem, "5/9") —
-  // tenta os dois formatos, senão a comparação nunca bate e a parcela
-  // âncora nunca é encontrada.
   const stripInstallmentSuffix = (description, installmentNumber, totalInstallments) => {
     if (!description || !installmentNumber || !totalInstallments) return description || "";
     const padded = `${String(installmentNumber).padStart(2, "0")}/${String(totalInstallments).padStart(2, "0")}`;
@@ -1890,6 +1978,131 @@ function CreditCardsView({
     return rawKey > floorKey ? rawKey : floorKey;
   };
 
+  const normalizeDescription = (s) =>
+    (s || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "");
+  const ROTATIVO_ADJUSTMENT_PREFIXES = [
+    "saldo em rotativo",
+    "juros de rotativo",
+    "iof de rotativo",
+    "juros de divida encerrada",
+    "encerramento de divida",
+  ];
+  const isRotativoAdjustment = (tx) => {
+    const d = normalizeDescription(tx.description);
+    return ROTATIVO_ADJUSTMENT_PREFIXES.some((p) => d.startsWith(p));
+  };
+  const INVOICE_PAYMENT_PREFIXES = ["pagamento recebido", "devolucao saldo credor"];
+  const isInvoicePayment = (tx) => {
+    const d = normalizeDescription(tx.description);
+    return INVOICE_PAYMENT_PREFIXES.some((p) => d.startsWith(p));
+  };
+
+  const cycleGroups = new Map();
+  allCardTransactions.forEach((tx) => {
+    if (isRotativoAdjustment(tx) || isInvoicePayment(tx)) return;
+    const key = effectiveCycleKey(tx);
+    if (!cycleGroups.has(key)) cycleGroups.set(key, []);
+    cycleGroups.get(key).push(tx);
+  });
+
+  const todayCycleKey = cycleMonthKey(today);
+
+  const selectedCycleKeys =
+    viewMode === "ano"
+      ? [...cycleGroups.keys()].filter((k) => k.startsWith(`${cursor.y}-`)).sort()
+      : [`${cursor.y}-${String(cursor.m + 1).padStart(2, "0")}`];
+
+  const billTransactions = selectedCycleKeys
+    .flatMap((k) => cycleGroups.get(k) || [])
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const periodTotal = billTransactions.reduce((s, tx) => s + tx.amount, 0);
+
+  const isCurrentCycle = viewMode === "mes" && selectedCycleKeys[0] === todayCycleKey;
+  const isFutureCycle = viewMode === "mes" && selectedCycleKeys[0] > todayCycleKey;
+  const summaryLabel = isCurrentCycle ? "em aberto" : isFutureCycle ? "ainda não fechou" : "";
+
+  return {
+    allCardTransactions,
+    cycleMonthKey,
+    stripInstallmentSuffix,
+    descriptionsMatch,
+    nextMonthKey,
+    effectiveCycleKey,
+    normalizeDescription,
+    isRotativoAdjustment,
+    isInvoicePayment,
+    cycleGroups,
+    todayCycleKey,
+    selectedCycleKeys,
+    billTransactions,
+    periodTotal,
+    isCurrentCycle,
+    isFutureCycle,
+    summaryLabel,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Credit card (Cartão de Crédito) view                                */
+/* ------------------------------------------------------------------ */
+function CreditCardsView({
+  hasBank,
+  cards,
+  status,
+  onFetch,
+  selectedCardId,
+  onSelectCard,
+  itemStatuses,
+  onSummaryChange,
+  cursor,
+  viewMode,
+  rotativoRate,
+  cardCloseDays,
+  cardUnreliableForecast,
+}) {
+  const loading = status === "loading";
+  const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
+  const forecastIsUnreliable = !!(selectedCard && cardUnreliableForecast[selectedCard.id]);
+  // Diagnóstico temporário — investigando parcelas caindo na fatura
+  // errada quando há vários meses de parcelamento pela frente.
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
+
+  // O dia em que a fatura fecha muda de banco pra banco, e a confiança na
+  // data prevista pra parcela futura também — ambos configurados por
+  // cartão em Configurações. O cálculo de ciclo/fatura em si é
+  // compartilhado com o resumo da aba Orçamento (computeCardCycleData),
+  // pra nunca ter duas contas divergentes do mesmo valor.
+  const BILL_CLOSE_DAY = (selectedCard && cardCloseDays[selectedCard.id]) || 3;
+  const today = todayISO();
+  const {
+    allCardTransactions,
+    cycleMonthKey,
+    stripInstallmentSuffix,
+    descriptionsMatch,
+    nextMonthKey,
+    effectiveCycleKey,
+    normalizeDescription,
+    isInvoicePayment,
+    cycleGroups,
+    todayCycleKey,
+    selectedCycleKeys,
+    billTransactions,
+    periodTotal,
+    isCurrentCycle,
+    isFutureCycle,
+    summaryLabel,
+  } = computeCardCycleData(selectedCard, {
+    cursor,
+    viewMode,
+    closeDay: BILL_CLOSE_DAY,
+    forecastIsUnreliable,
+    today,
+  });
+
   // Diagnóstico temporário — mesma lógica do effectiveCycleKey, mas
   // devolvendo o "porquê" (qual âncora foi usada, ou se caiu no
   // fallback da data bruta) pra investigar caso a caso com a usuária.
@@ -1940,75 +2153,9 @@ function CreditCardsView({
       : `data própria (raw: ${rawKey}) vinha igual/atrás da parcela anterior — usa o mínimo: ${floorKey}`;
   };
 
-  // O Nubank posta o rotativo como lançamentos de verdade na fatura
-  // ("Saldo em rotativo", "Juros de rotativo", "IOF de rotativo") — e,
-  // quando a dívida é finalmente quitada, mais dois de ajuste ("Juros de
-  // dívida encerrada", "Encerramento de dívida", que se cancelam). Nenhum
-  // desses é uma compra nem um pagamento de verdade, então saem tanto do
-  // agrupamento de compras quanto do de pagamentos — e "Saldo em
-  // rotativo" vira a fonte real do card de saldo rotativo, em vez de
-  // estimar.
-  const normalizeDescription = (s) =>
-    (s || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "");
-  const ROTATIVO_ADJUSTMENT_PREFIXES = [
-    "saldo em rotativo",
-    "juros de rotativo",
-    "iof de rotativo",
-    "juros de divida encerrada",
-    "encerramento de divida",
-  ];
-  const isRotativoAdjustment = (tx) => {
-    const d = normalizeDescription(tx.description);
-    return ROTATIVO_ADJUSTMENT_PREFIXES.some((p) => d.startsWith(p));
-  };
-
-  // Um pagamento de fatura de verdade (valor negativo, ex: "Pagamento
-  // recebido", "DEVOLUCAO SALDO CREDOR") sempre quita a fatura ANTERIOR
-  // (a que já fechou) — não é um lançamento de nenhuma fatura específica,
-  // então fica de fora do agrupamento por ciclo. Só ISSO fica de fora —
-  // um estorno de uma compra específica (ex: "Google G1ai101m" -R$96,99
-  // estornando a compra "Crédito de confiança de Google G1ai101m"
-  // +R$96,99) é um lançamento de verdade da fatura em que caiu, e deve
-  // abater o total normalmente, não desaparecer.
-  const INVOICE_PAYMENT_PREFIXES = ["pagamento recebido", "devolucao saldo credor"];
-  const isInvoicePayment = (tx) => {
-    const d = normalizeDescription(tx.description);
-    return INVOICE_PAYMENT_PREFIXES.some((p) => d.startsWith(p));
-  };
-
-  const cycleGroups = new Map();
-  allCardTransactions.forEach((tx) => {
-    if (isRotativoAdjustment(tx) || isInvoicePayment(tx)) return;
-    const key = effectiveCycleKey(tx);
-    if (!cycleGroups.has(key)) cycleGroups.set(key, []);
-    cycleGroups.get(key).push(tx);
-  });
-
-  const todayCycleKey = cycleMonthKey(today);
-
-  // A navegação de mês/ano do topo do app (a mesma usada por Início/
-  // Histórico/Investimentos) controla qual fatura aparece aqui.
-  const selectedCycleKeys =
-    viewMode === "ano"
-      ? [...cycleGroups.keys()].filter((k) => k.startsWith(`${cursor.y}-`)).sort()
-      : [`${cursor.y}-${String(cursor.m + 1).padStart(2, "0")}`];
-
-  const billTransactions = selectedCycleKeys
-    .flatMap((k) => cycleGroups.get(k) || [])
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-
   const displayedTransactions = showDiagnostic
     ? [...allCardTransactions].sort((a, b) => new Date(b.date) - new Date(a.date))
     : billTransactions;
-
-  const periodTotal = billTransactions.reduce((s, tx) => s + tx.amount, 0);
-
-  const isCurrentCycle = viewMode === "mes" && selectedCycleKeys[0] === todayCycleKey;
-  const isFutureCycle = viewMode === "mes" && selectedCycleKeys[0] > todayCycleKey;
-  const summaryLabel = isCurrentCycle ? "em aberto" : isFutureCycle ? "ainda não fechou" : "";
 
   // Saldo rotativo: quando a fatura anterior não é paga por completo, o
   // que falta vira dívida que fica rendendo juros todo dia até ser quitada.
