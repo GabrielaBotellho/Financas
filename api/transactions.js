@@ -8,6 +8,14 @@
 const { fetchAccounts, fetchTransactions } = require("../lib/pluggy");
 const { suggestCategory } = require("../lib/categorize");
 
+// A Aplicação Automática do Itaú varre o saldo ocioso da conta pra um fundo
+// todo dia e resgata de volta quando precisa de saldo — não é uma
+// movimentação real seu, é só o banco estacionando o saldo overnight (por
+// isso nem aparece no extrato simplificado do app do banco, só no extrato
+// detalhado que a Pluggy lê). Some completamente da importação, nunca é
+// mostrado nem salvo.
+const AUTO_SWEEP_DESCRIPTION = /aplic\s*aut\s*mais/i;
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
     res.status(405).json({ error: "Método não permitido" });
@@ -32,6 +40,7 @@ module.exports = async function handler(req, res) {
     for (const account of bankAccounts) {
       const txs = await fetchTransactions(account.id, { from, to });
       for (const tx of txs) {
+        if (AUTO_SWEEP_DESCRIPTION.test(tx.description || "")) continue;
         const isExpense = tx.amount < 0;
         // Sugestão automática de categoria de despesa só vale pra saídas —
         // pra entradas (salário, PIX recebido, etc.) o usuário categoriza na
