@@ -193,6 +193,15 @@ function lsSet(key, value) {
   }
 }
 
+// Mesma lista de api/transactions.js — lançamentos que são mecânica
+// interna do banco (Aplicação Automática do Itaú, Pix no crédito do
+// Nubank), não movimentação real. A API já filtra isso em importações
+// novas; isso aqui é só pra limpar o que ficou preso na fila de revisão
+// pendente de importações feitas antes desse filtro existir.
+const NOISE_DESCRIPTION_PATTERNS = [/aplic\s*aut\s*mais/i, /valor adicionado/i];
+const isNoiseDescription = (description) =>
+  NOISE_DESCRIPTION_PATTERNS.some((pattern) => pattern.test(description || ""));
+
 /* ------------------------------------------------------------------ */
 /* Small building blocks                                               */
 /* ------------------------------------------------------------------ */
@@ -327,7 +336,12 @@ export default function FinancasApp() {
     const legacy = lsGet(LS_KEYS.bankItemId);
     return legacy ? [{ itemId: legacy, label: "Banco 1" }] : [];
   });
-  const [pendingItems, setPendingItems] = useState(() => lsGet(LS_KEYS.pending) || []);
+  const [pendingItems, setPendingItems] = useState(() => {
+    const stored = lsGet(LS_KEYS.pending) || [];
+    const cleaned = stored.filter((p) => !isNoiseDescription(p.description));
+    if (cleaned.length !== stored.length) lsSet(LS_KEYS.pending, cleaned);
+    return cleaned;
+  });
   const [investments, setInvestments] = useState(() => lsGet(LS_KEYS.investments) || []);
   const [creditCards, setCreditCards] = useState(() => lsGet(LS_KEYS.creditCards) || []);
   const [itemStatuses, setItemStatuses] = useState(() => lsGet(LS_KEYS.itemStatus) || []);
@@ -648,6 +662,7 @@ export default function FinancasApp() {
       const alreadyPendingKeys = new Set(pendingItems.map((p) => p.key));
 
       const fresh = transactions
+        .filter((t) => !isNoiseDescription(t.description))
         .filter((t) => !alreadyPendingKeys.has(t.id))
         .filter((t) => {
           const key = `${t.date?.slice(0, 10)}|${t.amount}|${t.description || ""}`;
