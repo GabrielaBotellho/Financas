@@ -17,6 +17,7 @@ import {
   TrendingUp,
   CreditCard,
   Copy,
+  PiggyBank,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -174,6 +175,7 @@ const LS_KEYS = {
   rotativoRate: "caderneta:rotativoRate",
   cardCloseDays: "caderneta:cardCloseDays",
   cardUnreliableForecast: "caderneta:cardUnreliableForecast",
+  monthlyBudgets: "caderneta:monthlyBudgets",
 };
 
 function lsGet(key) {
@@ -201,6 +203,10 @@ function lsSet(key, value) {
 const NOISE_DESCRIPTION_PATTERNS = [/aplic\s*aut\s*mais/i, /valor adicionado/i];
 const isNoiseDescription = (description) =>
   NOISE_DESCRIPTION_PATTERNS.some((pattern) => pattern.test(description || ""));
+
+// Chave "AAAA-MM" pro orçamento de um mês específico — m é 0-indexado
+// (igual cursor.m, vindo de Date.getMonth()).
+const budgetMonthKey = (y, m) => `${y}-${String(m + 1).padStart(2, "0")}`;
 
 /* ------------------------------------------------------------------ */
 /* Small building blocks                                               */
@@ -309,6 +315,13 @@ export default function FinancasApp() {
     ...((lsGet(LS_KEYS.config) || {}).budgets || {}),
   }));
   const [income, setIncome] = useState(() => (lsGet(LS_KEYS.config) || {}).income || 0);
+  // Orçamento por categoria pode ser ajustado mês a mês — `budgets` acima
+  // é o valor padrão (usado quando o mês em questão não tem um valor
+  // específico salvo aqui). Chave no formato "AAAA-MM", igual ao resto do
+  // app (ex: ciclo de fatura do cartão).
+  const [monthlyBudgets, setMonthlyBudgets] = useState(
+    () => lsGet(LS_KEYS.monthlyBudgets) || {}
+  );
   // Taxa de juros do rotativo (% ao mês) — a Pluggy não retorna isso (não
   // tem campo de taxa de juros na API), então a usuária informa direto,
   // olhando no app do banco/contrato do cartão.
@@ -394,6 +407,16 @@ export default function FinancasApp() {
     if (!lsSet(LS_KEYS.cardUnreliableForecast, nextMap)) {
       setError("Não consegui salvar a configuração de previsão de parcelas.");
     }
+  }, []);
+
+  const saveMonthlyBudget = useCallback((monthKey, categoryValues) => {
+    setMonthlyBudgets((prev) => {
+      const next = { ...prev, [monthKey]: categoryValues };
+      if (!lsSet(LS_KEYS.monthlyBudgets, next)) {
+        setError("Não consegui salvar o orçamento do mês.");
+      }
+      return next;
+    });
   }, []);
 
   const addCustomCategory = (name, kind, diaDia) => {
@@ -812,6 +835,31 @@ export default function FinancasApp() {
   const totalSpent = expensesInPeriod.reduce((s, e) => s + e.amount, 0);
   const periodMultiplier = viewMode === "ano" ? 12 : 1;
 
+  // Orçamento efetivo de cada categoria pro período visível: usa o valor
+  // específico daquele mês se houver um salvo, senão cai pro padrão
+  // (`budgets`, configurado em Config). Em visão "ano", soma o valor
+  // efetivo de cada um dos 12 meses (cada um pode ter um valor diferente).
+  const effectiveBudgetFor = (category, y, m) => {
+    const key = budgetMonthKey(y, m);
+    const monthValue = monthlyBudgets[key]?.[category];
+    return monthValue !== undefined ? monthValue : budgets[category] || 0;
+  };
+  const effectiveBudgets = useMemo(() => {
+    const map = {};
+    CATEGORY_LIST.forEach((c) => {
+      if (viewMode === "ano") {
+        let total = 0;
+        for (let m = 0; m < 12; m++) total += effectiveBudgetFor(c, cursor.y, m);
+        map[c] = total;
+      } else {
+        map[c] = effectiveBudgetFor(c, cursor.y, cursor.m);
+      }
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthlyBudgets, budgets, cursor, viewMode]);
+  const totalBudgetPeriod = CATEGORY_LIST.reduce((s, c) => s + effectiveBudgets[c], 0);
+
   const byCategory = useMemo(() => {
     const map = {};
     CATEGORY_LIST.forEach((c) => (map[c] = 0));
@@ -822,7 +870,7 @@ export default function FinancasApp() {
   }, [expensesInPeriod]);
 
   const fixedCommitted = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo").reduce(
-    (s, c) => s + (budgets[c] || 0) * periodMultiplier,
+    (s, c) => s + effectiveBudgets[c],
     0
   );
   const fixedSpent = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo").reduce(
@@ -1019,6 +1067,18 @@ export default function FinancasApp() {
                   </div>
                 )}
               </>
+            ) : tab === "budget" ? (
+              <>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
+                  Orçamento planejado
+                </div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
+                  {fmtBRL(totalBudgetPeriod)}
+                </div>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
+                  {fmtBRL(totalSpent)} já gasto
+                </div>
+              </>
             ) : (
               <>
                 <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
@@ -1072,8 +1132,7 @@ export default function FinancasApp() {
           {tab === "home" && (
             <HomeView
               byCategory={byCategory}
-              budgets={budgets}
-              periodMultiplier={periodMultiplier}
+              effectiveBudgets={effectiveBudgets}
               fixedSpent={fixedSpent}
               fixedCommitted={fixedCommitted}
               diaadia={diaadia}
@@ -1117,6 +1176,16 @@ export default function FinancasApp() {
             />
           )}
 
+          {tab === "budget" && (
+            <BudgetView
+              cursor={cursor}
+              viewMode={viewMode}
+              monthlyBudgets={monthlyBudgets}
+              budgets={budgets}
+              onSaveMonthlyBudget={saveMonthlyBudget}
+            />
+          )}
+
           {tab === "settings" && (
             <SettingsView
               budgets={budgets}
@@ -1143,7 +1212,7 @@ export default function FinancasApp() {
         </div>
 
         {/* ---------------- FAB ---------------- */}
-        {tab !== "card" && (
+        {tab !== "card" && tab !== "budget" && (
           <button
             onClick={() => setShowAdd(true)}
             aria-label={tab === "invest" ? "Adicionar lançamento de rendimento" : "Adicionar gasto"}
@@ -1187,6 +1256,7 @@ export default function FinancasApp() {
             { id: "history", label: "Histórico", Icon: ListTree },
             { id: "invest", label: "Investimentos", Icon: TrendingUp },
             { id: "card", label: "Cartão", Icon: CreditCard },
+            { id: "budget", label: "Orçamento", Icon: PiggyBank },
             { id: "settings", label: "Config", Icon: SettingsIcon },
           ].map(({ id, label, Icon }) => (
             <button
@@ -1233,7 +1303,7 @@ export default function FinancasApp() {
 /* ------------------------------------------------------------------ */
 /* Home view                                                           */
 /* ------------------------------------------------------------------ */
-function HomeView({ byCategory, budgets, periodMultiplier, fixedSpent, fixedCommitted, diaadia, lazer, pendingTotal, pendingCount, onReviewPending }) {
+function HomeView({ byCategory, effectiveBudgets, fixedSpent, fixedCommitted, diaadia, lazer, pendingTotal, pendingCount, onReviewPending }) {
   const fixed = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo");
   const variable = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "variavel");
 
@@ -1281,7 +1351,7 @@ function HomeView({ byCategory, budgets, periodMultiplier, fixedSpent, fixedComm
             key={c}
             name={c}
             spent={byCategory[c]}
-            budget={(budgets[c] || 0) * periodMultiplier}
+            budget={effectiveBudgets[c]}
             color={BRASS}
             last={i === fixed.length - 1}
           />
@@ -1295,7 +1365,7 @@ function HomeView({ byCategory, budgets, periodMultiplier, fixedSpent, fixedComm
             key={c}
             name={c}
             spent={byCategory[c]}
-            budget={(budgets[c] || 0) * periodMultiplier}
+            budget={effectiveBudgets[c]}
             color={TEAL}
             last={i === variable.length - 1}
           />
@@ -1401,6 +1471,119 @@ function CategoryRow({ name, spent, budget, color, last }) {
           {fmtBRL(spent)}{hasBudget ? ` / ${fmtBRL(budget)}` : ""}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Budget view                                                         */
+/* ------------------------------------------------------------------ */
+function BudgetView({ cursor, viewMode, monthlyBudgets, budgets, onSaveMonthlyBudget }) {
+  const monthKey = budgetMonthKey(cursor.y, cursor.m);
+  const monthLabel = `${MONTHS_PT[cursor.m]} ${cursor.y}`;
+
+  const effectiveForMonth = (c) => {
+    const saved = monthlyBudgets[monthKey]?.[c];
+    return saved !== undefined ? saved : budgets[c] || 0;
+  };
+
+  const [localValues, setLocalValues] = useState(() => {
+    const init = {};
+    CATEGORY_LIST.forEach((c) => (init[c] = effectiveForMonth(c)));
+    return init;
+  });
+  const [saved, setSaved] = useState(false);
+
+  // Troca os valores em edição quando o mês selecionado muda (setas do
+  // topo) — senão ficaria editando o mês errado sem perceber.
+  useEffect(() => {
+    const init = {};
+    CATEGORY_LIST.forEach((c) => (init[c] = effectiveForMonth(c)));
+    setLocalValues(init);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthKey]);
+
+  if (viewMode === "ano") {
+    return (
+      <div style={{ textAlign: "center", padding: "40px 10px", color: MUTED, fontSize: 13 }}>
+        Orçamento é definido mês a mês — mude pro modo "Mês" no topo pra editar.
+      </div>
+    );
+  }
+
+  const handleSave = () => {
+    const cleaned = {};
+    CATEGORY_LIST.forEach((c) => {
+      cleaned[c] = Number(localValues[c]) || 0;
+    });
+    onSaveMonthlyBudget(monthKey, cleaned);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1600);
+  };
+
+  const total = CATEGORY_LIST.reduce((s, c) => s + (Number(localValues[c]) || 0), 0);
+
+  return (
+    <div>
+      <SectionLabel>Orçamento de {monthLabel}</SectionLabel>
+      <Card>
+        {CATEGORY_LIST.map((c, i) => (
+          <div
+            key={c}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              padding: "10px 14px",
+              borderBottom: i === CATEGORY_LIST.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+            }}
+          >
+            <span style={{ fontSize: 13, flex: 1 }}>{c}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={localValues[c]}
+              onChange={(e) => setLocalValues((v) => ({ ...v, [c]: e.target.value }))}
+              style={{
+                width: 90,
+                border: `1px solid ${PAPER_LINE}`,
+                borderRadius: 6,
+                padding: "6px 8px",
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: 13,
+                textAlign: "right",
+                background: PAPER,
+              }}
+            />
+          </div>
+        ))}
+      </Card>
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, padding: "0 4px" }}>
+        <span style={{ fontSize: 12, color: MUTED }}>Total planejado</span>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
+          {fmtBRL(total)}
+        </span>
+      </div>
+
+      <button
+        onClick={handleSave}
+        style={{
+          marginTop: 18,
+          width: "100%",
+          background: saved ? TEAL : INK,
+          color: CREAM_TEXT,
+          border: "none",
+          borderRadius: 8,
+          padding: "13px",
+          fontSize: 13.5,
+          fontWeight: 600,
+          letterSpacing: 0.3,
+        }}
+      >
+        {saved ? "Salvo ✓" : `Salvar orçamento de ${monthLabel}`}
+      </button>
     </div>
   );
 }
@@ -2521,8 +2704,12 @@ function SettingsView({
         </>
       )}
 
-      <SectionLabel style={{ marginTop: 22 }}>Orçamento por categoria (mensal)</SectionLabel>
+      <SectionLabel style={{ marginTop: 22 }}>Orçamento padrão por categoria</SectionLabel>
       <Card>
+        <div style={{ fontSize: 11, color: MUTED, padding: "10px 14px 4px" }}>
+          Valor usado em qualquer mês que não tenha um orçamento específico
+          definido na aba Orçamento. Pra ajustar mês a mês, use aquela aba.
+        </div>
         {CATEGORY_LIST.map((c, i) => (
           <div
             key={c}
