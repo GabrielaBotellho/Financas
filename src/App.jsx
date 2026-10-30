@@ -219,7 +219,9 @@ function cashDelta(items, { excludeSource } = {}) {
 // lançamentos do Realizado pelo ciclo de fatura a que pertencem.
 function cycleMonthKeyFor(dateISO, closeDay) {
   const [y, m, d] = dateISO.slice(0, 10).split("-").map(Number);
-  if (d <= closeDay) return `${y}-${String(m).padStart(2, "0")}`;
+  // Uma compra feita NO PRÓPRIO dia do fechamento já entra na fatura
+  // seguinte (confirmado com dados reais do Nubank) — por isso "<", não "<=".
+  if (d < closeDay) return `${y}-${String(m).padStart(2, "0")}`;
   const dt = new Date(y, m - 1, 1);
   dt.setMonth(dt.getMonth() + 1);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
@@ -827,7 +829,10 @@ export default function FinancasApp() {
       const [ty, tm, td] = today.split("-").map(Number);
       let cycleY = ty;
       let cycleM = tm - 1; // 0-indexado
-      if (td > closeDay) {
+      // Mesma regra de borda do dia de fechamento usada em cycleMonthKey:
+      // "hoje" exatamente no dia do fechamento já conta como parte do ciclo
+      // seguinte (">=", não só ">").
+      if (td >= closeDay) {
         cycleM += 1;
         if (cycleM > 11) {
           cycleM = 0;
@@ -2133,7 +2138,9 @@ function computeCardCycleData(card, { cursor, viewMode, closeDay, forecastIsUnre
   const BILL_CLOSE_DAY = closeDay || 3;
   const cycleMonthKey = (dateStr) => {
     const [y, m, d] = dateStr.slice(0, 10).split("-").map(Number);
-    if (d <= BILL_CLOSE_DAY) return `${y}-${String(m).padStart(2, "0")}`;
+    // Uma compra feita NO PRÓPRIO dia do fechamento já entra na fatura
+    // seguinte (confirmado com dados reais do Nubank) — por isso "<", não "<=".
+    if (d < BILL_CLOSE_DAY) return `${y}-${String(m).padStart(2, "0")}`;
     const dt = new Date(y, m - 1, 1);
     dt.setMonth(dt.getMonth() + 1);
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
