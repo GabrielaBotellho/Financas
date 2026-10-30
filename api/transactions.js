@@ -27,6 +27,7 @@ const isNoiseTransaction = (tx) =>
 // naquele dia. Nenhum dos dois deve aparecer na revisão diária de Realizado.
 const CARD_NOISE_PATTERNS = [
   /saldo em rotativo/i,
+  /credito de rotativo|crédito de rotativo/i,
   /juros de rotativo/i,
   /iof de rotativo/i,
   /juros de divida encerrada|juros de dívida encerrada/i,

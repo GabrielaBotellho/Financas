@@ -821,7 +821,7 @@ export default function FinancasApp() {
           m -= 12;
           y += 1;
         }
-        const { periodTotal } = computeCardCycleData(card, {
+        const { periodTotal, billTransactions } = computeCardCycleData(card, {
           cursor: { y, m },
           viewMode: "mes",
           closeDay,
@@ -843,6 +843,15 @@ export default function FinancasApp() {
           note: `Fatura ${card.name}${card.bankLabel ? " · " + card.bankLabel : ""}`,
           source: "cartao-auto",
           cardId: card.id,
+          // Lançamentos somados nessa fatura — exibidos em Previsto pra dar
+          // pra conferir o cálculo contra o app do banco, lançamento por
+          // lançamento, sem precisar adivinhar o que entrou ou não.
+          transactions: billTransactions.map((tx) => ({
+            id: tx.id,
+            description: tx.description || "(sem descrição)",
+            date: tx.date,
+            amount: tx.amount,
+          })),
         });
       }
     });
@@ -1488,6 +1497,10 @@ function PrevistoView({
   const [newFcDate, setNewFcDate] = useState(todayISO());
   const [newFcNote, setNewFcNote] = useState("");
 
+  // Qual fatura prevista está com a lista de lançamentos somados aberta —
+  // pra conferir o cálculo contra o app do banco, lançamento por lançamento.
+  const [expandedForecastId, setExpandedForecastId] = useState(null);
+
   const categoriesFor = (type) => (type === "income" ? INCOME_CATEGORY_LIST : CATEGORY_LIST);
 
   const handleAddRecurring = () => {
@@ -1824,28 +1837,72 @@ function PrevistoView({
             </div>
           ) : (
             <Card>
-              {sortedCardForecasts.map((f, i) => (
-                <div
-                  key={f.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "10px 14px",
-                    borderBottom: i === sortedCardForecasts.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13 }}>{f.note}</div>
-                    <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
-                      vence em {new Date(f.date).toLocaleDateString("pt-BR")}
-                    </div>
+              {sortedCardForecasts.map((f, i) => {
+                const expanded = expandedForecastId === f.id;
+                const txCount = f.transactions?.length || 0;
+                return (
+                  <div
+                    key={f.id}
+                    style={{
+                      borderBottom: i === sortedCardForecasts.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                    }}
+                  >
+                    <button
+                      onClick={() => setExpandedForecastId(expanded ? null : f.id)}
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 14px",
+                        background: "none",
+                        border: "none",
+                        textAlign: "left",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13 }}>{f.note}</div>
+                        <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+                          vence em {new Date(f.date).toLocaleDateString("pt-BR")} · {txCount} lançamento{txCount !== 1 ? "s" : ""} somado{txCount !== 1 ? "s" : ""} ·{" "}
+                          <span style={{ textDecoration: "underline" }}>
+                            {expanded ? "ocultar" : "conferir"}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
+                        {fmtBRL(f.amount)}
+                      </div>
+                    </button>
+                    {expanded && (
+                      <div style={{ padding: "0 14px 12px" }}>
+                        {txCount === 0 ? (
+                          <div style={{ fontSize: 11.5, color: MUTED }}>Nenhum lançamento encontrado.</div>
+                        ) : (
+                          f.transactions.map((tx) => (
+                            <div
+                              key={tx.id}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 8,
+                                padding: "4px 0",
+                                fontSize: 11.5,
+                              }}
+                            >
+                              <span style={{ color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {new Date(tx.date).toLocaleDateString("pt-BR")} · {tx.description}
+                              </span>
+                              <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: MUTED, whiteSpace: "nowrap" }}>
+                                {fmtBRL(tx.amount)}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
-                    {fmtBRL(f.amount)}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </Card>
           )}
           <div style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>
@@ -2053,6 +2110,7 @@ function computeCardCycleData(card, { cursor, viewMode, closeDay, forecastIsUnre
       .replace(/[̀-ͯ]/g, "");
   const ROTATIVO_ADJUSTMENT_PREFIXES = [
     "saldo em rotativo",
+    "credito de rotativo",
     "juros de rotativo",
     "iof de rotativo",
     "juros de divida encerrada",
