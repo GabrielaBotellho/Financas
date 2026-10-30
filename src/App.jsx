@@ -2120,7 +2120,11 @@ function computeCardCycleData(card, { cursor, viewMode, closeDay, forecastIsUnre
     const d = normalizeDescription(tx.description);
     return ROTATIVO_ADJUSTMENT_PREFIXES.some((p) => d.startsWith(p));
   };
-  const INVOICE_PAYMENT_PREFIXES = ["pagamento recebido", "devolucao saldo credor"];
+  const INVOICE_PAYMENT_PREFIXES = [
+    "pagamento recebido",
+    "pagamento com saldo",
+    "devolucao saldo credor",
+  ];
   const isInvoicePayment = (tx) => {
     const d = normalizeDescription(tx.description);
     return INVOICE_PAYMENT_PREFIXES.some((p) => d.startsWith(p));
