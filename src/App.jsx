@@ -242,11 +242,11 @@ function dayItemLabel(it) {
 /* ------------------------------------------------------------------ */
 /* Small building blocks                                               */
 /* ------------------------------------------------------------------ */
-function Card({ children }) {
+function Card({ children, background = "#F6F6F4" }) {
   return (
     <div
       style={{
-        background: "#F6F6F4",
+        background,
         border: `1px solid ${PAPER_LINE}`,
         borderRadius: 10,
         overflow: "hidden",
@@ -256,6 +256,11 @@ function Card({ children }) {
     </div>
   );
 }
+
+// Fundos bem sutis pra sinalizar, no Fluxo, se o saldo do dia está positivo
+// (verde claro) ou negativo (vermelho claro).
+const BALANCE_POSITIVE_TINT = "#EAF4EF";
+const BALANCE_NEGATIVE_TINT = "#FBEAE8";
 
 function SectionLabel({ children, style }) {
   return (
@@ -1293,6 +1298,8 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
         const balance = balances[d];
         const hasItems = items.length > 0;
 
+        const dayTint = balance >= 0 ? BALANCE_POSITIVE_TINT : BALANCE_NEGATIVE_TINT;
+
         if (!hasItems && !isToday) {
           return (
             <div
@@ -1304,6 +1311,8 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
                 fontSize: 11.5,
                 color: MUTED,
                 fontFamily: "'Inter', sans-serif",
+                background: dayTint,
+                borderRadius: 6,
               }}
             >
               <span>{formatDayLabel(d)}</span>
@@ -1314,14 +1323,14 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
 
         return (
           <div key={d} style={{ marginBottom: 10 }}>
-            <Card>
+            <Card background={dayTint}>
               <div
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
                   padding: "10px 14px",
-                  background: isToday ? "#EAF4EF" : "#F6F6F4",
+                  background: dayTint,
                   borderBottom: hasItems ? `1px solid ${PAPER_LINE}` : "none",
                 }}
               >
