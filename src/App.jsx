@@ -2810,7 +2810,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                   </span>
                 </div>
                 <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: MUTED, marginTop: 2 }}>
-                  {new Date(c.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                  {new Date(c.date + "T00:00:00").toLocaleDateString("pt-BR")} · {weekdayAbbrev(c.date)}
                   {c.accountName ? ` · ${c.accountName}` : ""}
                   {c.confidence && c.confidence !== "nenhuma" ? ` · confiança ${c.confidence}` : ""}
                 </div>
