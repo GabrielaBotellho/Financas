@@ -20,6 +20,23 @@ const NOISE_DESCRIPTION_PATTERNS = [/aplic\s*aut\s*mais/i, /valor adicionado/i];
 const isNoiseTransaction = (tx) =>
   NOISE_DESCRIPTION_PATTERNS.some((pattern) => pattern.test(tx.description || ""));
 
+// No cartão de crédito, um "Saldo em rotativo"/"Juros de rotativo"/etc não é
+// uma compra de verdade (ver api/credit-cards.js e computeCardCycleData no
+// front-end, que tratam disso com mais detalhe pro cálculo de fatura) — e um
+// "Pagamento recebido"/estorno de fatura não é algo que a usuária comprou
+// naquele dia. Nenhum dos dois deve aparecer na revisão diária de Realizado.
+const CARD_NOISE_PATTERNS = [
+  /saldo em rotativo/i,
+  /juros de rotativo/i,
+  /iof de rotativo/i,
+  /juros de divida encerrada|juros de dívida encerrada/i,
+  /encerramento de divida|encerramento de dívida/i,
+  /pagamento recebido/i,
+  /devolucao saldo credor|devolução saldo credor/i,
+];
+const isCardNoiseTransaction = (tx) =>
+  CARD_NOISE_PATTERNS.some((pattern) => pattern.test(tx.description || ""));
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
     res.status(405).json({ error: "Método não permitido" });
@@ -34,11 +51,12 @@ module.exports = async function handler(req, res) {
 
   try {
     const accounts = await fetchAccounts(itemId);
-    // Só conta corrente (BANK) entra na importação geral. Cartão de crédito
-    // (CREDIT) tem aba própria (api/credit-cards.js) com as faturas — além
-    // disso a Pluggy inverte o sinal do amount em contas CREDIT (positivo =
-    // compra), o que faria compras do cartão aparecerem como entrada aqui.
     const bankAccounts = accounts.filter((account) => account.type === "BANK");
+    // Conta de cartão de crédito entra também, pra compra aparecer na mesma
+    // revisão diária de Realizado que o extrato bancário — datada pela data
+    // real da compra, não pela fatura (isso continua calculado à parte, em
+    // api/credit-cards.js / computeCardCycleData, pro lado Previsto).
+    const creditAccounts = accounts.filter((account) => account.type === "CREDIT");
 
     const all = [];
     for (const account of bankAccounts) {
@@ -68,8 +86,42 @@ module.exports = async function handler(req, res) {
           amount: Math.abs(tx.amount),
           isExpense,
           accountName: account.name,
+          source: "banco",
           suggestedCategory,
           confidence,
+        });
+      }
+    }
+
+    for (const account of creditAccounts) {
+      let txs;
+      try {
+        txs = await fetchTransactions(account.id, { from, to });
+      } catch (err) {
+        // Uma conta de cartão com erro não deve derrubar o extrato bancário
+        // inteiro — segue sem as compras desse cartão.
+        console.error(`Falha ao buscar compras do cartão ${account.id}:`, err.message);
+        continue;
+      }
+      for (const tx of txs) {
+        if (isCardNoiseTransaction(tx)) continue;
+        // Na Pluggy, pra conta de cartão de crédito, o sinal é invertido:
+        // positivo é compra, negativo é pagamento/estorno — oposto da conta
+        // corrente. Pagamento/estorno de fatura já foi filtrado acima por
+        // descrição; o que sobrar de valor negativo é estorno de uma compra
+        // específica, uma entrada de verdade no Realizado.
+        const isExpense = tx.amount > 0;
+        const raw = suggestCategory(tx);
+        all.push({
+          id: tx.id,
+          date: tx.date,
+          description: tx.description,
+          amount: Math.abs(tx.amount),
+          isExpense,
+          accountName: account.name,
+          source: "cartao",
+          suggestedCategory: isExpense ? raw.suggestedCategory : null,
+          confidence: isExpense ? raw.confidence : "nenhuma",
         });
       }
     }

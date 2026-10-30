@@ -3,90 +3,71 @@ import {
   Plus,
   X,
   Trash2,
-  ChevronLeft,
   ChevronRight,
   Home as HomeIcon,
   ListTree,
+  Calendar,
   Settings as SettingsIcon,
   Wallet,
-  Sun,
-  PartyPopper,
   Landmark,
   RefreshCw,
   Check,
   TrendingUp,
   CreditCard,
   Copy,
-  PiggyBank,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Design tokens — "caderneta" (bank passbook) theme                   */
 /* ------------------------------------------------------------------ */
 const INK = "#16231D";
-const INK_SOFT = "#22332B";
 const PAPER = "#EDE7D8";
 const PAPER_LINE = "#DCD2B7";
-const PAPER_DIM = "#E3DBC7";
 const BRASS = "#B8863E";
 const TEAL = "#3F6B58";
 const CORAL = "#C1503D";
 const MUTED = "#7A705F";
 const CREAM_TEXT = "#EFE9DA";
 
+// CATEGORY_META/INCOME_META mapeiam categoria -> ícone (string). Começam só
+// com as categorias fixas do app, mas são recalculadas (rebuildCategories)
+// sempre que uma categoria personalizada é adicionada/removida — por isso
+// são `let`, não `const`.
 const BASE_CATEGORY_META = {
-  "Assinaturas": { group: "fixo", tag: null, icon: "♫" },
-  "Transporte - Carona": { group: "fixo", tag: null, icon: "→" },
-  "Transporte - Ônibus": { group: "fixo", tag: null, icon: "▭" },
-  "Academia": { group: "fixo", tag: null, icon: "↑" },
-  "Roupa": { group: "variavel", tag: null, icon: "◇" },
-  "Comida Dia a Dia": { group: "variavel", tag: "diaadia", icon: "○" },
-  "Comida Lazer": { group: "variavel", tag: "lazer", icon: "○" },
-  "Ifood - Dia a Dia": { group: "variavel", tag: "diaadia", icon: "◎" },
-  "Ifood - Lazer": { group: "variavel", tag: "lazer", icon: "◎" },
-  "Compras": { group: "variavel", tag: null, icon: "□" },
-  "Uber - Dia a Dia": { group: "variavel", tag: "diaadia", icon: "△" },
-  "Uber - Lazer": { group: "variavel", tag: "lazer", icon: "△" },
-  "Cartão de Crédito Nubank": { group: "variavel", tag: null, icon: "▪" },
-  "Farmácia": { group: "variavel", tag: null, icon: "✚" },
-  "Médico": { group: "variavel", tag: null, icon: "♥" },
+  "Assinaturas": "♫",
+  "Transporte - Carona": "→",
+  "Transporte - Ônibus": "▭",
+  "Academia": "↑",
+  "Roupa": "◇",
+  "Comida Dia a Dia": "○",
+  "Comida Lazer": "○",
+  "Ifood - Dia a Dia": "◎",
+  "Ifood - Lazer": "◎",
+  "Compras": "□",
+  "Uber - Dia a Dia": "△",
+  "Uber - Lazer": "△",
+  "Cartão de Crédito Nubank": "▪",
+  "Farmácia": "✚",
+  "Médico": "♥",
 };
-
-// CATEGORY_META e CATEGORY_LIST começam só com as categorias fixas do app,
-// mas são recalculadas (rebuildCategories) sempre que o usuário adiciona ou
-// remove uma categoria personalizada nas Configurações — por isso são `let`,
-// não `const`.
 let CATEGORY_META = { ...BASE_CATEGORY_META };
 let CATEGORY_LIST = Object.keys(CATEGORY_META);
 
-// Categorias de entrada (dinheiro chegando) — separadas das categorias de
-// despesa, já que não têm orçamento nem entram no comparativo dia a dia/lazer.
 const BASE_INCOME_META = {
-  "Salário": { icon: "$" },
-  "Reembolso": { icon: "↺" },
-  "Pix Recebido": { icon: "↓" },
-  "Outras Entradas": { icon: "+" },
+  "Salário": "$",
+  "Reembolso": "↺",
+  "Pix Recebido": "↓",
+  "Outras Entradas": "+",
 };
 let INCOME_META = { ...BASE_INCOME_META };
 let INCOME_CATEGORY_LIST = Object.keys(INCOME_META);
 
-/**
- * Recalcula CATEGORY_META/CATEGORY_LIST e INCOME_META/INCOME_CATEGORY_LIST
- * juntando as categorias fixas do app com as personalizadas cadastradas
- * pelo usuário (customCategories). Cada categoria personalizada tem um
- * `kind`: "expense" (entra em CATEGORY_META, grupo "variavel", com ou sem
- * a tag "diaadia" conforme o checkbox) ou "income" (entra em INCOME_META,
- * sem orçamento nem grupo).
- */
 function rebuildCategories(customCategories) {
   const mergedExpense = { ...BASE_CATEGORY_META };
   const mergedIncome = { ...BASE_INCOME_META };
   customCategories.forEach((c) => {
-    if (c.kind === "income") {
-      mergedIncome[c.name] = { icon: "+" };
-    } else {
-      mergedExpense[c.name] = { group: "variavel", tag: c.diaDia ? "diaadia" : null, icon: "•" };
-    }
+    if (c.kind === "income") mergedIncome[c.name] = "+";
+    else mergedExpense[c.name] = "•";
   });
   CATEGORY_META = mergedExpense;
   CATEGORY_LIST = Object.keys(mergedExpense);
@@ -94,38 +75,14 @@ function rebuildCategories(customCategories) {
   INCOME_CATEGORY_LIST = Object.keys(mergedIncome);
 }
 
-// Tipos de lançamento na aba Rendimentos — são conceitualmente diferentes
-// das categorias de gasto/entrada: não têm orçamento nem período de "gasto",
-// só entram na conta de aportes/rendimento/resgates/acumulado.
+// Tipos de lançamento na aba Investimentos — não têm orçamento nem período
+// de "gasto", só entram na conta de aportes/rendimento/resgates/acumulado.
 const INVESTMENT_TYPE_META = {
   aporte: { label: "Aporte", icon: "↑", color: TEAL },
   rendimento: { label: "Rendimento", icon: "★", color: BRASS },
   resgate: { label: "Resgate", icon: "↓", color: CORAL },
 };
-const INVESTMENT_TYPE_LIST = Object.keys(INVESTMENT_TYPE_META); // ["aporte", "rendimento", "resgate"]
-
-const DEFAULT_BUDGETS = {
-  "Assinaturas": 12,
-  "Transporte - Carona": 84,
-  "Transporte - Ônibus": 150,
-  "Academia": 15,
-  "Roupa": 0,
-  "Comida Dia a Dia": 0,
-  "Comida Lazer": 0,
-  "Ifood - Dia a Dia": 0,
-  "Ifood - Lazer": 0,
-  "Compras": 0,
-  "Uber - Dia a Dia": 0,
-  "Uber - Lazer": 0,
-  "Cartão de Crédito Nubank": 0,
-  "Farmácia": 0,
-  "Médico": 0,
-};
-
-const MONTHS_PT = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-];
+const INVESTMENT_TYPE_LIST = Object.keys(INVESTMENT_TYPE_META);
 
 const PLUGGY_CONNECT_SCRIPT_URL =
   "https://cdn.pluggy.ai/pluggy-connect/v2.8.2/pluggy-connect.js";
@@ -157,6 +114,11 @@ function daysAgoISO(n) {
   d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
 }
+function addDaysISO(dateISO, n) {
+  const d = new Date(dateISO + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
 /* ------------------------------------------------------------------ */
 /* Local persistence (localStorage — este app roda fora do sandbox     */
@@ -164,7 +126,6 @@ function daysAgoISO(n) {
 /* ------------------------------------------------------------------ */
 const LS_KEYS = {
   expenses: "caderneta:expenses",
-  config: "caderneta:config",
   bankItemId: "caderneta:bankItemId", // legado — migrado pra bankItems no load
   bankItems: "caderneta:bankItems",
   pending: "caderneta:pending",
@@ -175,8 +136,9 @@ const LS_KEYS = {
   rotativoRate: "caderneta:rotativoRate",
   cardCloseDays: "caderneta:cardCloseDays",
   cardUnreliableForecast: "caderneta:cardUnreliableForecast",
-  monthlyBudgets: "caderneta:monthlyBudgets",
-  monthlyBudgetMeta: "caderneta:monthlyBudgetMeta",
+  recurring: "caderneta:recurring",
+  forecasts: "caderneta:forecasts",
+  startingBalance: "caderneta:startingBalance",
 };
 
 function lsGet(key) {
@@ -196,23 +158,57 @@ function lsSet(key, value) {
   }
 }
 
-// Mesma lista de api/transactions.js — lançamentos que são mecânica
-// interna do banco (Aplicação Automática do Itaú, Pix no crédito do
-// Nubank), não movimentação real. A API já filtra isso em importações
-// novas; isso aqui é só pra limpar o que ficou preso na fila de revisão
-// pendente de importações feitas antes desse filtro existir.
+// Lançamentos que são mecânica interna do banco (Aplicação Automática do
+// Itaú, Pix no crédito do Nubank), não movimentação real — a API já filtra
+// isso em importações novas; isso aqui é só pra limpar o que ficou preso na
+// fila de revisão pendente de importações feitas antes desse filtro existir.
 const NOISE_DESCRIPTION_PATTERNS = [/aplic\s*aut\s*mais/i, /valor adicionado/i];
 const isNoiseDescription = (description) =>
   NOISE_DESCRIPTION_PATTERNS.some((pattern) => pattern.test(description || ""));
 
-// Chave "AAAA-MM" pro orçamento de um mês específico — m é 0-indexado
-// (igual cursor.m, vindo de Date.getMonth()).
-const budgetMonthKey = (y, m) => `${y}-${String(m + 1).padStart(2, "0")}`;
+/* ------------------------------------------------------------------ */
+/* Fluxo de caixa — janela de dias e cálculo de saldo diário            */
+/* ------------------------------------------------------------------ */
+const DAYS_PAST = 7;
+const DAYS_FUTURE = 180;
+const WEEKDAYS_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+function formatDayLabel(dateISO) {
+  const d = new Date(dateISO + "T00:00:00");
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} · ${WEEKDAYS_PT[d.getDay()]}`;
+}
+
+// Uma regra recorrente vale no dia D de cada mês — em meses mais curtos que
+// D (ex: regra no dia 31, mês de fevereiro), cai no último dia do mês.
+function isRecurringDue(rule, dateISO) {
+  const d = new Date(dateISO + "T00:00:00");
+  const day = d.getDate();
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const targetDay = Math.min(Number(rule.dayOfMonth) || 1, lastDay);
+  return day === targetDay;
+}
+
+// Soma o efeito em caixa de uma lista de lançamentos (Realizado ou
+// Previsto) num dia. Uma compra no cartão de crédito (source "cartao") não
+// move dinheiro da conta naquele dia — só a fatura paga (ou, pra frente,
+// prevista) afeta o saldo — por isso pode ser excluída via excludeSource.
+function cashDelta(items, { excludeSource } = {}) {
+  return items.reduce((s, it) => {
+    if (excludeSource && it.source === excludeSource) return s;
+    return s + (it.type === "income" ? it.amount : -it.amount);
+  }, 0);
+}
+
+function dayItemLabel(it) {
+  if (it.source === "cartao-auto") return it.note || it.category;
+  const base = it.note ? `${it.category} · ${it.note}` : it.category;
+  if (it.source === "cartao") return `${base} · cartão`;
+  return base;
+}
 
 /* ------------------------------------------------------------------ */
 /* Small building blocks                                               */
 /* ------------------------------------------------------------------ */
-
 function Perforation({ bg = PAPER, dot = INK }) {
   return (
     <div
@@ -229,48 +225,36 @@ function Perforation({ bg = PAPER, dot = INK }) {
   );
 }
 
-function StampRing({ percent, color, size = 60 }) {
-  const p = Math.min(percent, 100);
-  const r = (size - 18) / 2;
-  const c = 2 * Math.PI * r;
-  const dash = (p / 100) * c;
+function Card({ children }) {
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={size / 2 - 2}
-        fill="none"
-        stroke={PAPER_LINE}
-        strokeWidth="1.6"
-        strokeDasharray="1.4 3.6"
-      />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(22,35,29,0.09)" strokeWidth="6" />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth="6"
-        strokeDasharray={`${dash} ${c}`}
-        strokeLinecap="round"
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ transition: "stroke-dasharray 0.4s ease" }}
-      />
-      <text
-        x="50%"
-        y="50%"
-        textAnchor="middle"
-        dy="0.32em"
-        fontFamily="'IBM Plex Mono', monospace"
-        fontSize={size * 0.21}
-        fill={INK}
-        fontWeight="600"
-      >
-        {Math.round(p)}%
-      </text>
-    </svg>
+    <div
+      style={{
+        background: "#F5F1E5",
+        border: `1px solid ${PAPER_LINE}`,
+        borderRadius: 10,
+        overflow: "hidden",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SectionLabel({ children, style }) {
+  return (
+    <div
+      style={{
+        fontFamily: "'IBM Plex Mono', monospace",
+        fontSize: 11,
+        letterSpacing: 1,
+        textTransform: "uppercase",
+        color: MUTED,
+        marginBottom: 8,
+        ...style,
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -301,7 +285,6 @@ function loadPluggyScript() {
 /* ------------------------------------------------------------------ */
 /* Main App                                                            */
 /* ------------------------------------------------------------------ */
-
 export default function FinancasApp() {
   const [customCategories, setCustomCategories] = useState(
     () => lsGet(LS_KEYS.customCategories) || []
@@ -310,46 +293,36 @@ export default function FinancasApp() {
   // (usadas em todo o app) reflitam as categorias personalizadas atuais.
   rebuildCategories(customCategories);
 
+  // Ledger único de Realizado: despesas e entradas, vindas do banco, do
+  // cartão de crédito, ou lançadas manualmente (campo `source`).
   const [expenses, setExpenses] = useState(() => lsGet(LS_KEYS.expenses) || []);
-  const [budgets, setBudgets] = useState(() => ({
-    ...DEFAULT_BUDGETS,
-    ...((lsGet(LS_KEYS.config) || {}).budgets || {}),
-  }));
-  const [income, setIncome] = useState(() => (lsGet(LS_KEYS.config) || {}).income || 0);
-  // Orçamento por categoria pode ser ajustado mês a mês — `budgets` acima
-  // é o valor padrão (usado quando o mês em questão não tem um valor
-  // específico salvo aqui). Chave no formato "AAAA-MM", igual ao resto do
-  // app (ex: ciclo de fatura do cartão).
-  const [monthlyBudgets, setMonthlyBudgets] = useState(
-    () => lsGet(LS_KEYS.monthlyBudgets) || {}
+
+  // Previsto: regras recorrentes (categoria + valor + dia do mês) e
+  // lançamentos pontuais futuros, lançados manualmente na aba Previsto.
+  const [recurring, setRecurring] = useState(() => lsGet(LS_KEYS.recurring) || []);
+  const [forecasts, setForecasts] = useState(() => lsGet(LS_KEYS.forecasts) || []);
+  // Saldo da conta "agora" — âncora do Fluxo de Caixa: dias futuros somam a
+  // partir dele, dias passados são reconstruídos subtraindo o que
+  // aconteceu entre eles e hoje.
+  const [startingBalance, setStartingBalance] = useState(
+    () => lsGet(LS_KEYS.startingBalance) ?? 0
   );
-  // Entradas do mês e quanto da fatura do Nubank é pago por outra pessoa —
-  // também por mês ("AAAA-MM"), editados junto do orçamento na aba
-  // Orçamento, pra calcular o saldo disponível pra distribuir.
-  const [monthlyBudgetMeta, setMonthlyBudgetMeta] = useState(
-    () => lsGet(LS_KEYS.monthlyBudgetMeta) || {}
-  );
-  // Taxa de juros do rotativo (% ao mês) — a Pluggy não retorna isso (não
-  // tem campo de taxa de juros na API), então a usuária informa direto,
-  // olhando no app do banco/contrato do cartão.
+
+  // Taxa de juros do rotativo (% ao mês) — a Pluggy não retorna isso, então
+  // a usuária informa direto, olhando no app do banco/contrato do cartão.
   const [rotativoRate, setRotativoRate] = useState(() => lsGet(LS_KEYS.rotativoRate) ?? 16);
-  // Dia em que a fatura fecha, por cartão (id da conta) — cada banco tem
-  // um ciclo diferente (Itaú fecha dia 3, Nubank fecha dia 23, etc) e o
-  // balanceCloseDate que a Pluggy retorna já se mostrou não confiável
-  // antes, então isso é configurado manualmente por cartão em vez de
-  // confiar automaticamente no valor da API.
+  // Dia em que a fatura fecha, por cartão (id da conta) — cada banco tem um
+  // ciclo diferente (Itaú fecha dia 3, Nubank fecha dia 23, etc).
   const [cardCloseDays, setCardCloseDays] = useState(() => lsGet(LS_KEYS.cardCloseDays) || {});
   // Se a data prevista pela Pluggy pra parcela futura desse cartão costuma
-  // "pular" um mês (confirmado com dados reais: acontece no Itaú, não
-  // acontece no Nubank) — quando marcado, corrige a previsão a partir de
+  // "pular" um mês — quando marcado, corrige a previsão a partir de
   // qualquer parcela já realizada; quando não, confia na previsão.
   const [cardUnreliableForecast, setCardUnreliableForecast] = useState(
     () => lsGet(LS_KEYS.cardUnreliableForecast) || {}
   );
-  // O widget "Meu Pluggy" só deixa escolher UM banco por vez (Itaú OU
-  // Nubank), nunca os dois juntos — então cada banco vira uma conexão
-  // própria, com seu próprio itemId. bankItems guarda a lista inteira.
-  // Migra o antigo bankItemId (valor único) pra essa lista, se existir.
+  // O widget "Meu Pluggy" só deixa escolher UM banco por vez — então cada
+  // banco vira uma conexão própria, com seu próprio itemId. Migra o antigo
+  // bankItemId (valor único) pra essa lista, se existir.
   const [bankItems, setBankItems] = useState(() => {
     const stored = lsGet(LS_KEYS.bankItems);
     if (stored) return stored;
@@ -366,15 +339,9 @@ export default function FinancasApp() {
   const [creditCards, setCreditCards] = useState(() => lsGet(LS_KEYS.creditCards) || []);
   const [itemStatuses, setItemStatuses] = useState(() => lsGet(LS_KEYS.itemStatus) || []);
   const [ccStatus, setCcStatus] = useState("idle"); // idle | loading
-  const [selectedCardId, setSelectedCardId] = useState(null);
 
-  const [tab, setTab] = useState("home"); // home | history | invest | settings
+  const [tab, setTab] = useState("fluxo"); // fluxo | realizado | previsto | invest | settings
   const [showAdd, setShowAdd] = useState(false);
-  const [cursor, setCursor] = useState(() => {
-    const d = new Date();
-    return { y: d.getFullYear(), m: d.getMonth() };
-  });
-  const [viewMode, setViewMode] = useState("mes");
   const [error, setError] = useState("");
 
   const [bankStatus, setBankStatus] = useState("idle"); // idle | connecting | importing | reviewing
@@ -384,14 +351,6 @@ export default function FinancasApp() {
     setExpenses(next);
     if (!lsSet(LS_KEYS.expenses, next)) {
       setError("Não consegui salvar. Tente novamente.");
-    }
-  }, []);
-
-  const saveConfig = useCallback((nextBudgets, nextIncome) => {
-    setBudgets(nextBudgets);
-    setIncome(nextIncome);
-    if (!lsSet(LS_KEYS.config, { budgets: nextBudgets, income: nextIncome })) {
-      setError("Não consegui salvar as configurações.");
     }
   }, []);
 
@@ -416,27 +375,7 @@ export default function FinancasApp() {
     }
   }, []);
 
-  const saveMonthlyBudget = useCallback((monthKey, categoryValues) => {
-    setMonthlyBudgets((prev) => {
-      const next = { ...prev, [monthKey]: categoryValues };
-      if (!lsSet(LS_KEYS.monthlyBudgets, next)) {
-        setError("Não consegui salvar o orçamento do mês.");
-      }
-      return next;
-    });
-  }, []);
-
-  const saveMonthlyBudgetMeta = useCallback((monthKey, meta) => {
-    setMonthlyBudgetMeta((prev) => {
-      const next = { ...prev, [monthKey]: meta };
-      if (!lsSet(LS_KEYS.monthlyBudgetMeta, next)) {
-        setError("Não consegui salvar as entradas/cartões do mês.");
-      }
-      return next;
-    });
-  }, []);
-
-  const addCustomCategory = (name, kind, diaDia) => {
+  const addCustomCategory = (name, kind) => {
     const trimmed = name.trim();
     if (!trimmed) return;
     const exists = [...CATEGORY_LIST, ...INCOME_CATEGORY_LIST].some(
@@ -446,10 +385,7 @@ export default function FinancasApp() {
       setError("Essa categoria já existe.");
       return;
     }
-    const next = [
-      ...customCategories,
-      { name: trimmed, kind: kind === "income" ? "income" : "expense", diaDia: !!diaDia },
-    ];
+    const next = [...customCategories, { name: trimmed, kind: kind === "income" ? "income" : "expense" }];
     setCustomCategories(next);
     lsSet(LS_KEYS.customCategories, next);
   };
@@ -485,6 +421,26 @@ export default function FinancasApp() {
     saveExpenses(expenses.filter((e) => e.id !== id));
   };
 
+  /* -------------------- previsto: recorrentes e pontuais ------------- */
+  const saveRecurring = useCallback((next) => {
+    setRecurring(next);
+    lsSet(LS_KEYS.recurring, next);
+  }, []);
+  const addRecurring = (r) => saveRecurring([{ ...r, id: uid() }, ...recurring]);
+  const deleteRecurring = (id) => saveRecurring(recurring.filter((r) => r.id !== id));
+
+  const saveForecasts = useCallback((next) => {
+    setForecasts(next);
+    lsSet(LS_KEYS.forecasts, next);
+  }, []);
+  const addForecast = (f) => saveForecasts([{ ...f, id: uid() }, ...forecasts]);
+  const deleteForecast = (id) => saveForecasts(forecasts.filter((f) => f.id !== id));
+
+  const saveStartingBalance = useCallback((amount) => {
+    setStartingBalance(amount);
+    lsSet(LS_KEYS.startingBalance, amount);
+  }, []);
+
   /* -------------------- rendimentos (aportes/rendimento/resgates) ---- */
   const saveInvestments = useCallback((next) => {
     setInvestments(next);
@@ -510,21 +466,18 @@ export default function FinancasApp() {
 
   // Apaga só os lançamentos (gastos, entradas, investimentos, cartão e
   // pendências de importação). Mantém a conexão bancária, as categorias
-  // personalizadas e as configurações de orçamento/renda, que são
-  // preferências e não "dados financeiros" no sentido de histórico.
+  // personalizadas e as previsões (recorrentes e pontuais), que são
+  // preferências/planejamento e não "histórico realizado".
   const resetAllData = useCallback(() => {
     saveExpenses([]);
     saveInvestments([]);
     savePending([]);
     setCreditCards([]);
     lsSet(LS_KEYS.creditCards, []);
-    setSelectedCardId(null);
   }, [saveExpenses, saveInvestments, savePending]);
 
-  // Remove uma conexão específica (ex: parou de usar aquele cartão, ou
-  // quer reconectar do zero por algum erro). Os cartões e o status
-  // guardados em cache são só reconstruídos no próximo "Buscar faturas" —
-  // aqui só tiramos a conexão da lista.
+  // Remove uma conexão específica. Os cartões e o status guardados em cache
+  // são só reconstruídos no próximo "Buscar faturas".
   const removeBankItem = useCallback(
     (itemId) => {
       saveBankItems(bankItems.filter((b) => b.itemId !== itemId));
@@ -534,22 +487,18 @@ export default function FinancasApp() {
       const nextStatuses = itemStatuses.filter((s) => s.itemId !== itemId);
       setItemStatuses(nextStatuses);
       lsSet(LS_KEYS.itemStatus, nextStatuses);
-      setSelectedCardId(null);
     },
     [bankItems, creditCards, itemStatuses, saveBankItems]
   );
 
   /* -------------------- cartão de crédito (faturas) ------------------- */
-  // Busca cartões de TODAS as conexões (Itaú, Nubank, etc — uma por
-  // bankItem) e junta tudo numa lista só. Cada cartão/status carrega
-  // qual bankItemId (e label) ele veio, pra saber de qual banco é.
+  // Busca cartões de TODAS as conexões (Itaú, Nubank, etc) e junta tudo
+  // numa lista só. Alimenta o cálculo automático de previsão de fatura.
   const fetchCreditCards = useCallback(async () => {
     if (bankItems.length === 0) return;
     setCcStatus("loading");
     setError("");
     try {
-      // Cada banco é buscado isoladamente — se um falhar (ex: Nubank sem
-      // acesso liberado ainda), o outro continua aparecendo normalmente.
       const results = await Promise.all(
         bankItems.map(async (b) => {
           try {
@@ -582,7 +531,6 @@ export default function FinancasApp() {
       lsSet(LS_KEYS.creditCards, allCards);
       setItemStatuses(allStatuses);
       lsSet(LS_KEYS.itemStatus, allStatuses);
-      if (allCards.length > 0) setSelectedCardId((id) => id || allCards[0].id);
       if (errors.length > 0) {
         setError(`Não consegui buscar os cartões de: ${errors.join(" · ")}`);
       }
@@ -595,12 +543,6 @@ export default function FinancasApp() {
   }, [bankItems]);
 
   /* -------------------- conexão bancária (Pluggy) -------------------- */
-  // O widget "Meu Pluggy" só deixa escolher UM banco por conexão (é seleção
-  // única entre Itaú/Nubank/etc, não múltipla) — então essa função é
-  // chamada uma vez por banco, sempre ADICIONANDO uma conexão nova à
-  // lista, nunca substituindo. Itens do Meu Pluggy sincronizam sozinhos
-  // uma vez por dia, então NUNCA reabrimos esse widget em modo "update"
-  // pra um item já existente — isso não é suportado por esse conector.
   const connectBank = useCallback(async () => {
     setError("");
     setBankStatus("connecting");
@@ -659,8 +601,6 @@ export default function FinancasApp() {
     try {
       const from = daysAgoISO(90);
       const to = todayISO();
-      // Cada conexão é buscada isoladamente — se uma falhar, as outras
-      // continuam sendo importadas normalmente.
       const results = await Promise.all(
         itemIds.map(async (itemId) => {
           try {
@@ -672,9 +612,7 @@ export default function FinancasApp() {
               try {
                 const body = await res.json();
                 if (body?.error) detail = body.error;
-              } catch (_) {
-                // resposta não era JSON, mantém o status HTTP como detalhe
-              }
+              } catch (_) {}
               throw new Error(detail);
             }
             const { transactions } = await res.json();
@@ -690,9 +628,6 @@ export default function FinancasApp() {
 
       // Evita sugerir de novo transações que já foram importadas antes
       // (heurística simples: mesma data + mesmo valor + mesma descrição).
-      // Despesas/entradas normais são comparadas contra `expenses`; itens de
-      // investimento (aporte/resgate) são comparados contra `investments`,
-      // já que vivem em listas separadas.
       const existingKeys = new Set(
         expenses.map((e) => `${e.date}|${e.amount}|${e.note || ""}`)
       );
@@ -710,10 +645,8 @@ export default function FinancasApp() {
           return isInvestment ? !existingInvestmentKeys.has(key) : !existingKeys.has(key);
         })
         .map((t) => {
-          // "Investimentos" é um caso especial: nem despesa nem entrada
-          // comuns — o lançamento inteiro vai direto pra aba Investimentos
-          // (aporte se saiu da conta, resgate se voltou), e por isso NUNCA
-          // conta nos totais da tela inicial.
+          // "Investimentos" é um caso especial: o lançamento inteiro vai
+          // direto pra aba Investimentos (aporte se saiu, resgate se voltou).
           if (t.suggestedCategory === "Investimentos") {
             return {
               key: t.id,
@@ -724,6 +657,7 @@ export default function FinancasApp() {
               type: "investment",
               investType: t.isExpense ? "aporte" : "resgate",
               confidence: t.confidence,
+              source: t.source,
               include: true,
             };
           }
@@ -738,14 +672,13 @@ export default function FinancasApp() {
               ? t.suggestedCategory || CATEGORY_LIST[0]
               : INCOME_CATEGORY_LIST[0],
             confidence: t.confidence,
-            // entradas sempre exigem revisão manual (sem sugestão automática),
-            // então começam desmarcadas por padrão
+            source: t.source,
+            // entradas sempre exigem revisão manual, então começam
+            // desmarcadas por padrão
             include: t.isExpense ? !!t.suggestedCategory : false,
           };
         });
 
-      // Junta com o que já estava pendente de revisões anteriores — nada
-      // se perde se você fechar o app sem revisar tudo de uma vez.
       const merged = [...pendingItems, ...fresh];
       savePending(merged);
       setImportCandidates(merged);
@@ -772,6 +705,7 @@ export default function FinancasApp() {
         amount: Math.abs(Number(c.amount)),
         date: c.date,
         note: c.description || "",
+        source: c.source || "banco",
       }));
     if (normalToAdd.length > 0) addManyExpenses(normalToAdd);
 
@@ -785,9 +719,6 @@ export default function FinancasApp() {
       }));
     if (investmentToAdd.length > 0) addManyInvestments(investmentToAdd);
 
-    // Tudo que passou por essa revisão sai da lista de pendentes — seja
-    // porque virou gasto/investimento de verdade, seja porque você
-    // desmarcou de propósito.
     const reviewedKeys = new Set(finalList.map((c) => c.key));
     savePending(pendingItems.filter((p) => !reviewedKeys.has(p.key)));
 
@@ -796,22 +727,15 @@ export default function FinancasApp() {
   };
 
   const cancelImport = () => {
-    // Cancelar só fecha a tela — os itens continuam pendentes pra depois.
     setImportCandidates([]);
     setBankStatus("idle");
   };
 
-  // Abre a revisão direto com o que já está pendente, sem precisar buscar
-  // de novo no banco.
   const reviewPending = useCallback(() => {
     setImportCandidates(pendingItems);
     setBankStatus("reviewing");
   }, [pendingItems]);
 
-  // Itens do Meu Pluggy sincronizam sozinhos uma vez por dia — não faz
-  // sentido reabrir o widget de conexão pra "atualizar" um banco já
-  // conectado. Esse botão busca as transações mais recentes de TODAS as
-  // conexões de uma vez, direto na API.
   const refreshAllBanks = useCallback(() => {
     if (bankItems.length > 0) {
       importTransactions(bankItems.map((b) => b.itemId));
@@ -819,163 +743,80 @@ export default function FinancasApp() {
   }, [bankItems, importTransactions]);
 
   /* -------------------- derived data -------------------- */
-  // `inPeriod` traz TUDO (despesas e entradas) — usado no Histórico.
-  const inPeriod = useMemo(() => {
-    return expenses.filter((e) => {
-      const d = new Date(e.date + "T00:00:00");
-      if (viewMode === "ano") return d.getFullYear() === cursor.y;
-      return d.getFullYear() === cursor.y && d.getMonth() === cursor.m;
-    });
-  }, [expenses, cursor, viewMode]);
+  const pendingTotal = pendingItems.reduce((s, p) => s + Math.abs(p.amount), 0);
 
-  // Registros antigos não tinham campo `type` — tratamos como despesa.
-  const isIncomeRecord = (e) => e.type === "income";
-  const expensesInPeriod = useMemo(
-    () => inPeriod.filter((e) => !isIncomeRecord(e)),
-    [inPeriod]
+  const aportesTotal = investments.filter((i) => i.type === "aporte").reduce((s, i) => s + i.amount, 0);
+  const rendimentoTotal = investments.filter((i) => i.type === "rendimento").reduce((s, i) => s + i.amount, 0);
+  const resgatesTotal = investments.filter((i) => i.type === "resgate").reduce((s, i) => s + i.amount, 0);
+  const accumulated = investments.reduce(
+    (s, inv) => s + (inv.type === "resgate" ? -inv.amount : inv.amount),
+    0
   );
-  const incomeInPeriod = useMemo(
-    () => inPeriod.filter((e) => isIncomeRecord(e)),
-    [inPeriod]
-  );
-  const totalIncomeReal = incomeInPeriod.reduce((s, e) => s + e.amount, 0);
 
-  const pendingInPeriod = useMemo(() => {
-    return pendingItems.filter((p) => {
-      const d = new Date(p.date + "T00:00:00");
-      if (viewMode === "ano") return d.getFullYear() === cursor.y;
-      return d.getFullYear() === cursor.y && d.getMonth() === cursor.m;
-    });
-  }, [pendingItems, cursor, viewMode]);
-  const pendingTotal = pendingInPeriod.reduce((s, p) => s + Math.abs(p.amount), 0);
+  // Previsão automática de fatura de cartão: pra cada cartão conectado,
+  // calcula o total das próximas ~6 faturas usando o mesmo motor validado
+  // da aba antiga de Cartão (computeCardCycleData), e estima a data de
+  // vencimento a partir do histórico real de faturas do próprio cartão.
+  const cardAutoForecasts = useMemo(() => {
+    const today = todayISO();
+    const out = [];
+    creditCards.forEach((card) => {
+      const closeDay = cardCloseDays[card.id] || 3;
+      const forecastIsUnreliable = !!cardUnreliableForecast[card.id];
+      const bills = card.bills || [];
+      const offsets = bills
+        .filter((b) => b.billClosingDate && b.dueDate)
+        .map((b) => Math.round((new Date(b.dueDate) - new Date(b.billClosingDate)) / 86400000))
+        .filter((n) => n > 0 && n < 40);
+      const dueDayOffset = offsets.length
+        ? Math.round(offsets.reduce((a, b) => a + b, 0) / offsets.length)
+        : 7;
 
-  const totalSpent = expensesInPeriod.reduce((s, e) => s + e.amount, 0);
-  const periodMultiplier = viewMode === "ano" ? 12 : 1;
+      const [ty, tm, td] = today.split("-").map(Number);
+      let cycleY = ty;
+      let cycleM = tm - 1; // 0-indexado
+      if (td > closeDay) {
+        cycleM += 1;
+        if (cycleM > 11) {
+          cycleM = 0;
+          cycleY += 1;
+        }
+      }
 
-  // Orçamento efetivo de cada categoria pro período visível: usa o valor
-  // específico daquele mês se houver um salvo, senão cai pro padrão
-  // (`budgets`, configurado em Config). Em visão "ano", soma o valor
-  // efetivo de cada um dos 12 meses (cada um pode ter um valor diferente).
-  const effectiveBudgetFor = (category, y, m) => {
-    const key = budgetMonthKey(y, m);
-    const monthValue = monthlyBudgets[key]?.[category];
-    return monthValue !== undefined ? monthValue : budgets[category] || 0;
-  };
-  const effectiveBudgets = useMemo(() => {
-    const map = {};
-    CATEGORY_LIST.forEach((c) => {
-      if (viewMode === "ano") {
-        let total = 0;
-        for (let m = 0; m < 12; m++) total += effectiveBudgetFor(c, cursor.y, m);
-        map[c] = total;
-      } else {
-        map[c] = effectiveBudgetFor(c, cursor.y, cursor.m);
+      for (let o = 0; o < 6; o++) {
+        let y = cycleY;
+        let m = cycleM + o;
+        while (m > 11) {
+          m -= 12;
+          y += 1;
+        }
+        const { periodTotal } = computeCardCycleData(card, {
+          cursor: { y, m },
+          viewMode: "mes",
+          closeDay,
+          forecastIsUnreliable,
+          today,
+        });
+        if (!periodTotal || periodTotal <= 0) continue;
+        const closingDate = new Date(y, m, closeDay);
+        const dueDate = new Date(closingDate);
+        dueDate.setDate(dueDate.getDate() + dueDayOffset);
+        const dueDateISO = dueDate.toISOString().slice(0, 10);
+        if (dueDateISO <= today) continue;
+        out.push({
+          id: `cartao-auto-${card.id}-${y}-${m}`,
+          type: "expense",
+          category: "Cartão de Crédito",
+          amount: periodTotal,
+          date: dueDateISO,
+          note: `Fatura ${card.name}${card.bankLabel ? " · " + card.bankLabel : ""}`,
+          source: "cartao-auto",
+          cardId: card.id,
+        });
       }
     });
-    return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthlyBudgets, budgets, cursor, viewMode]);
-  const totalBudgetPeriod = CATEGORY_LIST.reduce((s, c) => s + effectiveBudgets[c], 0);
-
-  const byCategory = useMemo(() => {
-    const map = {};
-    CATEGORY_LIST.forEach((c) => (map[c] = 0));
-    expensesInPeriod.forEach((e) => {
-      map[e.category] = (map[e.category] || 0) + e.amount;
-    });
-    return map;
-  }, [expensesInPeriod]);
-
-  const fixedCommitted = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo").reduce(
-    (s, c) => s + effectiveBudgets[c],
-    0
-  );
-  const fixedSpent = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo").reduce(
-    (s, c) => s + byCategory[c],
-    0
-  );
-
-  const diaadia = CATEGORY_LIST.filter((c) => CATEGORY_META[c].tag === "diaadia").reduce(
-    (s, c) => s + byCategory[c],
-    0
-  );
-  const lazer = CATEGORY_LIST.filter((c) => CATEGORY_META[c].tag === "lazer").reduce(
-    (s, c) => s + byCategory[c],
-    0
-  );
-
-  const incomePeriod = income * periodMultiplier;
-  // "Sobra/falta" agora considera tanto a renda mensal configurada quanto as
-  // entradas reais importadas do banco no período.
-  const remaining = incomePeriod + totalIncomeReal - totalSpent;
-
-  // -------- Rendimentos: aportes / rendimento / resgates / acumulado --------
-  // Início e fim do período visível (mês ou ano), pra filtrar os lançamentos
-  // e também pra saber até que data soma o "acumulado".
-  const periodStart = useMemo(
-    () => (viewMode === "ano" ? new Date(cursor.y, 0, 1) : new Date(cursor.y, cursor.m, 1)),
-    [cursor, viewMode]
-  );
-  const periodEnd = useMemo(
-    () => (viewMode === "ano" ? new Date(cursor.y, 11, 31) : new Date(cursor.y, cursor.m + 1, 0)),
-    [cursor, viewMode]
-  );
-
-  const investmentsInPeriod = useMemo(() => {
-    return investments.filter((inv) => {
-      const d = new Date(inv.date + "T00:00:00");
-      return d >= periodStart && d <= periodEnd;
-    });
-  }, [investments, periodStart, periodEnd]);
-
-  const aportesPeriod = investmentsInPeriod
-    .filter((i) => i.type === "aporte")
-    .reduce((s, i) => s + i.amount, 0);
-  const rendimentoPeriod = investmentsInPeriod
-    .filter((i) => i.type === "rendimento")
-    .reduce((s, i) => s + i.amount, 0);
-  const resgatesPeriod = investmentsInPeriod
-    .filter((i) => i.type === "resgate")
-    .reduce((s, i) => s + i.amount, 0);
-
-  // Acumulado = saldo total investido até o FIM do período visível (não só
-  // o que aconteceu dentro dele) — assim navegar entre meses/anos mostra o
-  // saldo histórico de cada ponto no tempo, como um extrato de verdade.
-  const accumulated = useMemo(() => {
-    return investments
-      .filter((inv) => new Date(inv.date + "T00:00:00") <= periodEnd)
-      .reduce((s, inv) => s + (inv.type === "resgate" ? -inv.amount : inv.amount), 0);
-  }, [investments, periodEnd]);
-
-  // % do salário (renda configurada) que foi investido como aporte no período.
-  const pctInvested = incomePeriod > 0 ? (aportesPeriod / incomePeriod) * 100 : null;
-
-  // -------- Cartão de crédito --------
-  // A CreditCardsView guarda internamente qual fatura/ciclo está
-  // selecionado (Em aberto, uma fatura fechada, uma próxima fatura) — ela
-  // reporta aqui o resumo de exibir no topo, pra ele acompanhar o que
-  // está selecionado lá embaixo em vez de mostrar sempre a última fatura
-  // fechada, fixa.
-  const [cardSummary, setCardSummary] = useState(null);
-
-  const periodLabel =
-    viewMode === "ano" ? `${cursor.y}` : `${MONTHS_PT[cursor.m]} ${cursor.y}`;
-
-  const shiftPeriod = (dir) => {
-    setCursor((c) => {
-      if (viewMode === "ano") return { ...c, y: c.y + dir };
-      let m = c.m + dir;
-      let y = c.y;
-      if (m < 0) {
-        m = 11;
-        y -= 1;
-      } else if (m > 11) {
-        m = 0;
-        y += 1;
-      }
-      return { y, m };
-    });
-  };
+    return out;
+  }, [creditCards, cardCloseDays, cardUnreliableForecast]);
 
   return (
     <div
@@ -1002,135 +843,15 @@ export default function FinancasApp() {
 
       <div style={{ width: "100%", maxWidth: 430, minHeight: "100vh", display: "flex", flexDirection: "column", position: "relative" }}>
         {/* ---------------- COVER ---------------- */}
-        <div style={{ background: INK, color: CREAM_TEXT, padding: "28px 20px 0" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Wallet size={16} color={BRASS} />
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1.5, color: BRASS, textTransform: "uppercase" }}>
-                Caderneta
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 6, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>
-              {["mes", "ano"].map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setViewMode(v)}
-                  style={{
-                    background: viewMode === v ? BRASS : "transparent",
-                    color: viewMode === v ? INK : CREAM_TEXT,
-                    border: `1px solid ${BRASS}`,
-                    borderRadius: 3,
-                    padding: "3px 9px",
-                    textTransform: "uppercase",
-                    letterSpacing: 1,
-                  }}
-                >
-                  {v === "mes" ? "Mês" : "Ano"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 22 }}>
-            <button onClick={() => shiftPeriod(-1)} aria-label="Período anterior" style={{ background: "none", border: "none", color: CREAM_TEXT, opacity: 0.7 }}>
-              <ChevronLeft size={20} />
-            </button>
-            <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 15, letterSpacing: 0.5 }}>
-              {periodLabel}
+        <div style={{ background: INK, color: CREAM_TEXT, padding: "28px 20px 22px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Wallet size={16} color={BRASS} />
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1.5, color: BRASS, textTransform: "uppercase" }}>
+              Caderneta
             </span>
-            <button onClick={() => shiftPeriod(1)} aria-label="Próximo período" style={{ background: "none", border: "none", color: CREAM_TEXT, opacity: 0.7 }}>
-              <ChevronRight size={20} />
-            </button>
           </div>
-
-          <div style={{ textAlign: "center", marginTop: 10, marginBottom: 22 }}>
-            {tab === "card" ? (
-              <>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
-                  {cardSummary
-                    ? cardSummary.label
-                      ? `${cardSummary.cardName} · ${cardSummary.label}`
-                      : cardSummary.cardName
-                    : "Fatura atual"}
-                </div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
-                  {fmtBRL(cardSummary?.total ?? 0)}
-                </div>
-                {cardSummary?.dueDate ? (
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
-                    vence em {new Date(cardSummary.dueDate).toLocaleDateString("pt-BR")}
-                  </div>
-                ) : creditCards.length === 0 ? (
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
-                    toque em "Buscar faturas" abaixo
-                  </div>
-                ) : null}
-              </>
-            ) : tab === "invest" ? (
-              <>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
-                  % do salário investido
-                </div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
-                  {pctInvested === null ? "—" : `${pctInvested.toFixed(1)}%`}
-                </div>
-                {pctInvested === null ? (
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
-                    defina sua renda mensal em Config
-                  </div>
-                ) : (
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "#9ED0B4" }}>
-                    {fmtBRL(aportesPeriod)} aportados
-                  </div>
-                )}
-              </>
-            ) : tab === "budget" ? (
-              <>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
-                  Orçamento planejado
-                </div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
-                  {fmtBRL(totalBudgetPeriod)}
-                </div>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginTop: 8, color: "rgba(239,233,218,0.55)" }}>
-                  {fmtBRL(totalSpent)} já gasto
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "rgba(239,233,218,0.55)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
-                  Total gasto
-                </div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 44, lineHeight: 1 }}>
-                  {fmtBRL(totalSpent)}
-                </div>
-                {totalIncomeReal > 0 && (
-                  <div
-                    style={{
-                      fontFamily: "'IBM Plex Mono', monospace",
-                      fontSize: 12,
-                      marginTop: 6,
-                      color: "#9ED0B4",
-                    }}
-                  >
-                    + {fmtBRL(totalIncomeReal)} em entradas
-                  </div>
-                )}
-                {(income > 0 || totalIncomeReal > 0) && (
-                  <div
-                    style={{
-                      fontFamily: "'IBM Plex Mono', monospace",
-                      fontSize: 12,
-                      marginTop: 8,
-                      color: remaining >= 0 ? "#9ED0B4" : "#E3A093",
-                    }}
-                  >
-                    {remaining >= 0 ? "sobram " : "faltam "}
-                    {fmtBRL(Math.abs(remaining))}
-                  </div>
-                )}
-              </>
-            )}
+          <div style={{ marginTop: 14, fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 20 }}>
+            {TAB_TITLES[tab]}
           </div>
         </div>
         <Perforation bg={PAPER} dot={INK} />
@@ -1146,73 +867,56 @@ export default function FinancasApp() {
             </div>
           )}
 
-          {tab === "home" && (
-            <HomeView
-              byCategory={byCategory}
-              effectiveBudgets={effectiveBudgets}
-              fixedSpent={fixedSpent}
-              fixedCommitted={fixedCommitted}
-              diaadia={diaadia}
-              lazer={lazer}
-              pendingTotal={pendingTotal}
-              pendingCount={pendingInPeriod.length}
-              onReviewPending={reviewPending}
+          {tab === "fluxo" && (
+            <FluxoView
+              expenses={expenses}
+              recurring={recurring}
+              forecasts={forecasts}
+              cardAutoForecasts={cardAutoForecasts}
+              startingBalance={startingBalance}
+              onSaveStartingBalance={saveStartingBalance}
             />
           )}
 
-          {tab === "history" && (
-            <HistoryView expenses={inPeriod} onDelete={deleteExpense} />
+          {tab === "realizado" && (
+            <RealizadoView
+              expenses={expenses}
+              pendingTotal={pendingTotal}
+              pendingCount={pendingItems.length}
+              onReviewPending={reviewPending}
+              onDelete={deleteExpense}
+            />
+          )}
+
+          {tab === "previsto" && (
+            <PrevistoView
+              recurring={recurring}
+              onAddRecurring={addRecurring}
+              onDeleteRecurring={deleteRecurring}
+              forecasts={forecasts}
+              onAddForecast={addForecast}
+              onDeleteForecast={deleteForecast}
+              cardAutoForecasts={cardAutoForecasts}
+              hasBank={bankItems.length > 0}
+              creditCards={creditCards}
+              ccStatus={ccStatus}
+              onFetchCards={fetchCreditCards}
+            />
           )}
 
           {tab === "invest" && (
             <InvestmentsView
-              aportes={aportesPeriod}
-              rendimento={rendimentoPeriod}
-              resgates={resgatesPeriod}
+              aportes={aportesTotal}
+              rendimento={rendimentoTotal}
+              resgates={resgatesTotal}
               accumulated={accumulated}
-              entries={investmentsInPeriod}
+              entries={investments}
               onDelete={deleteInvestment}
             />
           )}
 
-          {tab === "card" && (
-            <CreditCardsView
-              hasBank={bankItems.length > 0}
-              cards={creditCards}
-              status={ccStatus}
-              onFetch={fetchCreditCards}
-              selectedCardId={selectedCardId}
-              onSelectCard={setSelectedCardId}
-              itemStatuses={itemStatuses}
-              onSummaryChange={setCardSummary}
-              cursor={cursor}
-              viewMode={viewMode}
-              rotativoRate={rotativoRate}
-              cardCloseDays={cardCloseDays}
-              cardUnreliableForecast={cardUnreliableForecast}
-            />
-          )}
-
-          {tab === "budget" && (
-            <BudgetView
-              cursor={cursor}
-              viewMode={viewMode}
-              monthlyBudgets={monthlyBudgets}
-              budgets={budgets}
-              onSaveMonthlyBudget={saveMonthlyBudget}
-              monthlyBudgetMeta={monthlyBudgetMeta}
-              onSaveMonthlyBudgetMeta={saveMonthlyBudgetMeta}
-              creditCards={creditCards}
-              cardCloseDays={cardCloseDays}
-              cardUnreliableForecast={cardUnreliableForecast}
-            />
-          )}
-
           {tab === "settings" && (
-            <SettingsView
-              budgets={budgets}
-              income={income}
-              onSave={saveConfig}
+            <ConfigView
               rotativoRate={rotativoRate}
               onSaveRotativoRate={saveRotativoRate}
               creditCards={creditCards}
@@ -1221,6 +925,7 @@ export default function FinancasApp() {
               cardUnreliableForecast={cardUnreliableForecast}
               onSaveCardUnreliableForecast={saveCardUnreliableForecast}
               bankItems={bankItems}
+              itemStatuses={itemStatuses}
               bankStatus={bankStatus}
               onConnectBank={connectBank}
               onRefreshAll={refreshAllBanks}
@@ -1234,10 +939,10 @@ export default function FinancasApp() {
         </div>
 
         {/* ---------------- FAB ---------------- */}
-        {tab !== "card" && tab !== "budget" && (
+        {(tab === "fluxo" || tab === "realizado" || tab === "invest") && (
           <button
             onClick={() => setShowAdd(true)}
-            aria-label={tab === "invest" ? "Adicionar lançamento de rendimento" : "Adicionar gasto"}
+            aria-label={tab === "invest" ? "Adicionar lançamento de rendimento" : "Adicionar lançamento"}
             style={{
               position: "fixed",
               bottom: 78,
@@ -1274,11 +979,10 @@ export default function FinancasApp() {
           }}
         >
           {[
-            { id: "home", label: "Início", Icon: HomeIcon },
-            { id: "history", label: "Histórico", Icon: ListTree },
-            { id: "invest", label: "Investimentos", Icon: TrendingUp },
-            { id: "card", label: "Cartão", Icon: CreditCard },
-            { id: "budget", label: "Orçamento", Icon: PiggyBank },
+            { id: "fluxo", label: "Fluxo", Icon: HomeIcon },
+            { id: "realizado", label: "Realizado", Icon: ListTree },
+            { id: "previsto", label: "Previsto", Icon: Calendar },
+            { id: "invest", label: "Investir", Icon: TrendingUp },
             { id: "settings", label: "Config", Icon: SettingsIcon },
           ].map(({ id, label, Icon }) => (
             <button
@@ -1322,12 +1026,214 @@ export default function FinancasApp() {
   );
 }
 
+const TAB_TITLES = {
+  fluxo: "Fluxo de caixa",
+  realizado: "Realizado",
+  previsto: "Previsto",
+  invest: "Investimentos",
+  settings: "Configurações",
+};
+
 /* ------------------------------------------------------------------ */
-/* Home view                                                           */
+/* Fluxo de Caixa view — panorama diário, Realizado (passado/hoje) x   */
+/* Previsto (futuro), com saldo projetado dia a dia                    */
 /* ------------------------------------------------------------------ */
-function HomeView({ byCategory, effectiveBudgets, fixedSpent, fixedCommitted, diaadia, lazer, pendingTotal, pendingCount, onReviewPending }) {
-  const fixed = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo");
-  const variable = CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "variavel");
+function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, startingBalance, onSaveStartingBalance }) {
+  const [localBalance, setLocalBalance] = useState(startingBalance ?? "");
+  useEffect(() => {
+    setLocalBalance(startingBalance ?? "");
+  }, [startingBalance]);
+
+  const today = todayISO();
+
+  const days = useMemo(() => {
+    const list = [];
+    const start = new Date();
+    start.setDate(start.getDate() - DAYS_PAST);
+    for (let i = 0; i <= DAYS_PAST + DAYS_FUTURE; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      list.push(d.toISOString().slice(0, 10));
+    }
+    return list;
+  }, [today]);
+
+  const realizedByDay = useMemo(() => {
+    const map = {};
+    expenses.forEach((e) => {
+      (map[e.date] = map[e.date] || []).push(e);
+    });
+    return map;
+  }, [expenses]);
+
+  const forecastsByDay = useMemo(() => {
+    const map = {};
+    days.forEach((d) => {
+      if (d <= today) return;
+      const items = [];
+      recurring.forEach((r) => {
+        if (r.active === false) return;
+        if (isRecurringDue(r, d)) items.push(r);
+      });
+      forecasts.forEach((f) => {
+        if (f.date === d) items.push(f);
+      });
+      cardAutoForecasts.forEach((f) => {
+        if (f.date === d) items.push(f);
+      });
+      if (items.length) map[d] = items;
+    });
+    return map;
+  }, [days, today, recurring, forecasts, cardAutoForecasts]);
+
+  const balances = useMemo(() => {
+    const map = {};
+    const anchor = Number(startingBalance) || 0;
+    map[today] = anchor;
+    let running = anchor;
+    days
+      .filter((d) => d > today)
+      .sort()
+      .forEach((d) => {
+        running += cashDelta(forecastsByDay[d] || []);
+        map[d] = running;
+      });
+    days
+      .filter((d) => d < today)
+      .sort()
+      .reverse()
+      .forEach((d) => {
+        const nextDay = addDaysISO(d, 1);
+        const nextBalance = map[nextDay] ?? anchor;
+        const delta = cashDelta(realizedByDay[nextDay] || [], { excludeSource: "cartao" });
+        map[d] = nextBalance - delta;
+      });
+    return map;
+  }, [days, today, forecastsByDay, realizedByDay, startingBalance]);
+
+  const handleSaveBalance = () => onSaveStartingBalance(Number(localBalance) || 0);
+
+  return (
+    <div>
+      <SectionLabel>Saldo atual</SectionLabel>
+      <Card>
+        <div style={{ padding: "14px" }}>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={localBalance}
+            onChange={(e) => setLocalBalance(e.target.value)}
+            onBlur={handleSaveBalance}
+            placeholder="0,00"
+            style={{ ...fieldInput, margin: 0, fontFamily: "'IBM Plex Mono', monospace", fontSize: 18 }}
+          />
+        </div>
+        <div style={{ fontSize: 11, color: MUTED, padding: "0 14px 12px" }}>
+          O saldo da sua conta agora — o ponto de partida. Os dias abaixo são
+          calculados a partir dele: pra frente usando o Previsto, pra trás
+          reconstruindo com o Realizado.
+        </div>
+      </Card>
+
+      <SectionLabel style={{ marginTop: 22 }}>
+        Próximos {DAYS_FUTURE} dias · realizado e previsto
+      </SectionLabel>
+
+      {days.map((d) => {
+        const isFuture = d > today;
+        const isToday = d === today;
+        const items = isFuture ? forecastsByDay[d] || [] : realizedByDay[d] || [];
+        const balance = balances[d];
+        const hasItems = items.length > 0;
+
+        if (!hasItems && !isToday) {
+          return (
+            <div
+              key={d}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "6px 14px",
+                fontSize: 11.5,
+                color: MUTED,
+                fontFamily: "'IBM Plex Mono', monospace",
+              }}
+            >
+              <span>{formatDayLabel(d)}</span>
+              <span>{fmtBRL(balance)}</span>
+            </div>
+          );
+        }
+
+        return (
+          <div key={d} style={{ marginBottom: 10 }}>
+            <Card>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 14px",
+                  background: isToday ? "#F3E7CE" : "#F5F1E5",
+                  borderBottom: hasItems ? `1px solid ${PAPER_LINE}` : "none",
+                }}
+              >
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+                  {formatDayLabel(d)}
+                  {isToday ? " · hoje" : ""}
+                  {isFuture ? " · previsto" : ""}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: balance >= 0 ? TEAL : CORAL,
+                  }}
+                >
+                  {fmtBRL(balance)}
+                </span>
+              </div>
+              {items.map((it, i) => (
+                <div
+                  key={it.id || i}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    padding: "8px 14px",
+                    borderBottom: i === items.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                    opacity: it.source === "cartao" ? 0.6 : 1,
+                  }}
+                >
+                  <span style={{ fontSize: 12.5 }}>{dayItemLabel(it)}</span>
+                  <span
+                    style={{
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: it.type === "income" ? TEAL : INK,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {it.type === "income" ? "+ " : "− "}
+                    {fmtBRL(it.amount)}
+                  </span>
+                </div>
+              ))}
+            </Card>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Realizado view — extrato diário unificado (banco + cartão + manual) */
+/* ------------------------------------------------------------------ */
+function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, onDelete }) {
+  const sorted = [...expenses].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   return (
     <div>
@@ -1353,439 +1259,484 @@ function HomeView({ byCategory, effectiveBudgets, fixedSpent, fixedCommitted, di
               {fmtBRL(pendingTotal)} ainda não categorizado{pendingCount > 1 ? "s" : ""}
             </div>
             <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
-              {pendingCount} lançamento{pendingCount > 1 ? "s" : ""} do banco neste período · toque para revisar
+              {pendingCount} lançamento{pendingCount > 1 ? "s" : ""} do banco/cartão · toque para revisar
             </div>
           </div>
           <ChevronRight size={18} color={BRASS} />
         </button>
       )}
 
-      <SectionLabel>Dia a dia × Lazer</SectionLabel>
-      <div style={{ display: "flex", gap: 10, marginBottom: 22 }}>
-        <SplitCard icon={<Sun size={16} color={TEAL} />} label="Dia a dia" value={diaadia} color={TEAL} />
-        <SplitCard icon={<PartyPopper size={16} color={CORAL} />} label="Lazer" value={lazer} color={CORAL} />
-      </div>
-
-      <SectionLabel>Custos fixos · {fmtBRL(fixedSpent)} de {fmtBRL(fixedCommitted)}</SectionLabel>
-      <Card>
-        {fixed.map((c, i) => (
-          <CategoryRow
-            key={c}
-            name={c}
-            spent={byCategory[c]}
-            budget={effectiveBudgets[c]}
-            color={BRASS}
-            last={i === fixed.length - 1}
-          />
-        ))}
-      </Card>
-
-      <SectionLabel style={{ marginTop: 22 }}>Custos variáveis</SectionLabel>
-      <Card>
-        {variable.map((c, i) => (
-          <CategoryRow
-            key={c}
-            name={c}
-            spent={byCategory[c]}
-            budget={effectiveBudgets[c]}
-            color={TEAL}
-            last={i === variable.length - 1}
-          />
-        ))}
-      </Card>
-    </div>
-  );
-}
-
-function SectionLabel({ children, style }) {
-  return (
-    <div
-      style={{
-        fontFamily: "'IBM Plex Mono', monospace",
-        fontSize: 11,
-        letterSpacing: 1,
-        textTransform: "uppercase",
-        color: MUTED,
-        marginBottom: 8,
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Card({ children }) {
-  return (
-    <div
-      style={{
-        background: "#F5F1E5",
-        border: `1px solid ${PAPER_LINE}`,
-        borderRadius: 10,
-        overflow: "hidden",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SplitCard({ icon, label, value, color }) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        background: "#F5F1E5",
-        border: `1px solid ${PAPER_LINE}`,
-        borderLeft: `3px solid ${color}`,
-        borderRadius: 8,
-        padding: "12px 14px",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-        {icon}
-        <span style={{ fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
-          {label}
-        </span>
-      </div>
-      <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 20 }}>{fmtBRL(value)}</div>
-    </div>
-  );
-}
-
-function CategoryRow({ name, spent, budget, color, last }) {
-  const hasBudget = budget > 0;
-  const percent = hasBudget ? (spent / budget) * 100 : 0;
-  const over = hasBudget && spent > budget;
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        padding: "12px 14px",
-        borderBottom: last ? "none" : `1px solid ${PAPER_LINE}`,
-      }}
-    >
-      {hasBudget ? (
-        <StampRing percent={percent} color={over ? CORAL : color} size={46} />
+      <SectionLabel>Lançamentos</SectionLabel>
+      {sorted.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "40px 10px", color: MUTED, fontSize: 13 }}>
+          Nenhum gasto lançado ainda.
+          <br />
+          Toque no + para registrar o primeiro, ou conecte seu banco em Config.
+        </div>
       ) : (
-        <div
+        <Card>
+          {sorted.map((e, i) => (
+            <div
+              key={e.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "12px 14px",
+                borderBottom: i === sorted.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+              }}
+            >
+              <div style={{ fontSize: 16, width: 22, textAlign: "center", color: MUTED }}>
+                {e.type === "income" ? INCOME_META[e.category] || "+" : CATEGORY_META[e.category] || "•"}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                  {e.category}
+                  {e.source === "cartao" && (
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontSize: 9.5,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                        color: MUTED,
+                        border: `1px solid ${MUTED}`,
+                        borderRadius: 4,
+                        padding: "1px 5px",
+                      }}
+                    >
+                      Cartão
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                  {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                  {e.note ? ` · ${e.note}` : ""}
+                </div>
+              </div>
+              <div
+                style={{
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: e.type === "income" ? TEAL : INK,
+                }}
+              >
+                {e.type === "income" ? "+ " : ""}
+                {fmtBRL(e.amount)}
+              </div>
+              <button
+                onClick={() => onDelete(e.id)}
+                aria-label="Excluir gasto"
+                style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Previsto view — regras recorrentes, lançamentos pontuais futuros e  */
+/* previsão automática de fatura de cartão                             */
+/* ------------------------------------------------------------------ */
+function PrevistoView({
+  recurring,
+  onAddRecurring,
+  onDeleteRecurring,
+  forecasts,
+  onAddForecast,
+  onDeleteForecast,
+  cardAutoForecasts,
+  hasBank,
+  creditCards,
+  ccStatus,
+  onFetchCards,
+}) {
+  const [newRecType, setNewRecType] = useState("expense");
+  const [newRecCategory, setNewRecCategory] = useState(CATEGORY_LIST[0]);
+  const [newRecAmount, setNewRecAmount] = useState("");
+  const [newRecDay, setNewRecDay] = useState("5");
+  const [newRecNote, setNewRecNote] = useState("");
+
+  const [newFcType, setNewFcType] = useState("expense");
+  const [newFcCategory, setNewFcCategory] = useState(CATEGORY_LIST[0]);
+  const [newFcAmount, setNewFcAmount] = useState("");
+  const [newFcDate, setNewFcDate] = useState(todayISO());
+  const [newFcNote, setNewFcNote] = useState("");
+
+  const categoriesFor = (type) => (type === "income" ? INCOME_CATEGORY_LIST : CATEGORY_LIST);
+
+  const handleAddRecurring = () => {
+    if (!(Number(newRecAmount) > 0)) return;
+    onAddRecurring({
+      type: newRecType,
+      category: newRecCategory,
+      amount: Number(newRecAmount),
+      dayOfMonth: Math.min(31, Math.max(1, Number(newRecDay) || 1)),
+      note: newRecNote.trim(),
+      active: true,
+    });
+    setNewRecAmount("");
+    setNewRecNote("");
+  };
+
+  const handleAddForecast = () => {
+    if (!(Number(newFcAmount) > 0)) return;
+    onAddForecast({
+      type: newFcType,
+      category: newFcCategory,
+      amount: Number(newFcAmount),
+      date: newFcDate,
+      note: newFcNote.trim(),
+      source: "manual",
+    });
+    setNewFcAmount("");
+    setNewFcNote("");
+  };
+
+  const sortedRecurring = [...recurring].sort((a, b) => a.dayOfMonth - b.dayOfMonth);
+  const sortedForecasts = [...forecasts].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const sortedCardForecasts = [...cardAutoForecasts].sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  const typeToggle = (value, onChange) => (
+    <div style={{ display: "flex", gap: 8 }}>
+      {[{ id: "expense", label: "Despesa" }, { id: "income", label: "Entrada" }].map((opt) => (
+        <button
+          key={opt.id}
+          onClick={() => onChange(opt.id)}
           style={{
-            width: 46,
-            height: 46,
-            borderRadius: "50%",
-            border: `1.4px dashed ${PAPER_LINE}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 16,
-            color: MUTED,
-            flexShrink: 0,
+            flex: 1,
+            background: value === opt.id ? INK : "#F5F1E5",
+            color: value === opt.id ? CREAM_TEXT : INK,
+            border: `1px solid ${value === opt.id ? INK : PAPER_LINE}`,
+            borderRadius: 6,
+            padding: "8px",
+            fontSize: 12.5,
+            fontWeight: 600,
           }}
         >
-          {CATEGORY_META[name].icon}
-        </div>
-      )}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 500 }}>{name}</div>
-        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: over ? CORAL : MUTED, marginTop: 2 }}>
-          {fmtBRL(spent)}{hasBudget ? ` / ${fmtBRL(budget)}` : ""}
-        </div>
-      </div>
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
-}
-
-/* ------------------------------------------------------------------ */
-/* Budget view                                                         */
-/* ------------------------------------------------------------------ */
-// Acha o cartão de um banco específico entre os conectados, pelo nome do
-// cartão ou pelo rótulo dado ao conectar (ex: "ITAU...", "Nubank").
-function findCardByBank(creditCards, pattern) {
-  return creditCards.find((c) => pattern.test(c.name || "") || pattern.test(c.bankLabel || ""));
-}
-const NUBANK_PATTERN = /nubank/i;
-const ITAU_PATTERN = /ita[uú]/i;
-
-function BudgetView({
-  cursor,
-  viewMode,
-  monthlyBudgets,
-  budgets,
-  onSaveMonthlyBudget,
-  monthlyBudgetMeta,
-  onSaveMonthlyBudgetMeta,
-  creditCards,
-  cardCloseDays,
-  cardUnreliableForecast,
-}) {
-  const monthKey = budgetMonthKey(cursor.y, cursor.m);
-  const monthLabel = `${MONTHS_PT[cursor.m]} ${cursor.y}`;
-
-  const effectiveForMonth = (c) => {
-    const saved = monthlyBudgets[monthKey]?.[c];
-    return saved !== undefined ? saved : budgets[c] || 0;
-  };
-
-  const [localValues, setLocalValues] = useState(() => {
-    const init = {};
-    CATEGORY_LIST.forEach((c) => (init[c] = effectiveForMonth(c)));
-    return init;
-  });
-  const meta = monthlyBudgetMeta[monthKey] || {};
-  const [localIncome, setLocalIncome] = useState(meta.income ?? "");
-  const [localNubankPaidByOther, setLocalNubankPaidByOther] = useState(meta.nubankPaidByOther ?? "");
-  const [saved, setSaved] = useState(false);
-
-  // Troca os valores em edição quando o mês selecionado muda (setas do
-  // topo) — senão ficaria editando o mês errado sem perceber.
-  useEffect(() => {
-    const init = {};
-    CATEGORY_LIST.forEach((c) => (init[c] = effectiveForMonth(c)));
-    setLocalValues(init);
-    const m = monthlyBudgetMeta[monthKey] || {};
-    setLocalIncome(m.income ?? "");
-    setLocalNubankPaidByOther(m.nubankPaidByOther ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthKey]);
-
-  if (viewMode === "ano") {
-    return (
-      <div style={{ textAlign: "center", padding: "40px 10px", color: MUTED, fontSize: 13 }}>
-        Orçamento é definido mês a mês — mude pro modo "Mês" no topo pra editar.
-      </div>
-    );
-  }
-
-  // Puxa o valor da fatura de cada cartão direto da mesma conta usada na
-  // aba Cartão (computeCardCycleData), pra nunca divergir — identifica o
-  // cartão do Nubank/Itaú pelo nome ou rótulo do banco.
-  const today = todayISO();
-  const nubankCard = findCardByBank(creditCards, NUBANK_PATTERN);
-  const itauCard = findCardByBank(creditCards, ITAU_PATTERN);
-  const nubankTotal = nubankCard
-    ? computeCardCycleData(nubankCard, {
-        cursor,
-        viewMode,
-        closeDay: cardCloseDays[nubankCard.id] || 3,
-        forecastIsUnreliable: !!cardUnreliableForecast[nubankCard.id],
-        today,
-      }).periodTotal
-    : null;
-  const itauTotal = itauCard
-    ? computeCardCycleData(itauCard, {
-        cursor,
-        viewMode,
-        closeDay: cardCloseDays[itauCard.id] || 3,
-        forecastIsUnreliable: !!cardUnreliableForecast[itauCard.id],
-        today,
-      }).periodTotal
-    : null;
-
-  const income = Number(localIncome) || 0;
-  const nubankPaidByOther = Number(localNubankPaidByOther) || 0;
-  const nubankOwedByMe = Math.max(0, (nubankTotal || 0) - nubankPaidByOther);
-  const saldoDisponivel = income - nubankOwedByMe - (itauTotal || 0);
-
-  const handleSave = () => {
-    const cleaned = {};
-    CATEGORY_LIST.forEach((c) => {
-      cleaned[c] = Number(localValues[c]) || 0;
-    });
-    onSaveMonthlyBudget(monthKey, cleaned);
-    onSaveMonthlyBudgetMeta(monthKey, { income, nubankPaidByOther });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1600);
-  };
-
-  const total = CATEGORY_LIST.reduce((s, c) => s + (Number(localValues[c]) || 0), 0);
-
-  const rowStyle = (last) => ({
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    padding: "10px 14px",
-    borderBottom: last ? "none" : `1px solid ${PAPER_LINE}`,
-  });
-  const numberInputStyle = {
-    width: 90,
-    border: `1px solid ${PAPER_LINE}`,
-    borderRadius: 6,
-    padding: "6px 8px",
-    fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: 13,
-    textAlign: "right",
-    background: PAPER,
-  };
 
   return (
     <div>
-      <SectionLabel>Resumo de {monthLabel}</SectionLabel>
+      <SectionLabel>Recorrentes</SectionLabel>
+      {sortedRecurring.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: MUTED, marginBottom: 14 }}>
+          Nenhum lançamento recorrente ainda — ex: aluguel todo dia 5, salário
+          todo dia 1, transporte todo dia 10.
+        </div>
+      ) : (
+        <Card>
+          {sortedRecurring.map((r, i) => (
+            <div
+              key={r.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 14px",
+                borderBottom: i === sortedRecurring.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+              }}
+            >
+              <div style={{ width: 38, textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED }}>
+                dia {r.dayOfMonth}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>
+                  {r.category}
+                  {r.note ? ` · ${r.note}` : ""}
+                </div>
+              </div>
+              <div
+                style={{
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: r.type === "income" ? TEAL : INK,
+                }}
+              >
+                {r.type === "income" ? "+ " : "− "}
+                {fmtBRL(r.amount)}
+              </div>
+              <button
+                onClick={() => onDeleteRecurring(r.id)}
+                aria-label="Excluir recorrente"
+                style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </Card>
+      )}
+
       <Card>
-        <div style={rowStyle(false)}>
-          <span style={{ fontSize: 13, flex: 1 }}>Entradas</span>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={localIncome}
-            onChange={(e) => setLocalIncome(e.target.value)}
-            placeholder="0,00"
-            style={numberInputStyle}
-          />
-        </div>
-        <div style={rowStyle(false)}>
-          <span style={{ fontSize: 13, flex: 1 }}>Cartão Nubank</span>
-          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 }}>
-            {nubankCard ? fmtBRL(nubankTotal) : "—"}
-          </span>
-        </div>
-        <div style={{ ...rowStyle(false), paddingLeft: 24, background: "#F5F1E5" }}>
-          <span style={{ fontSize: 12, color: MUTED, flex: 1 }}>Quanto outra pessoa paga?</span>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={localNubankPaidByOther}
-            onChange={(e) => setLocalNubankPaidByOther(e.target.value)}
-            placeholder="0,00"
-            style={numberInputStyle}
-          />
-        </div>
-        <div style={rowStyle(true)}>
-          <span style={{ fontSize: 13, flex: 1 }}>Cartão Itaú</span>
-          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 }}>
-            {itauCard ? fmtBRL(itauTotal) : "—"}
-          </span>
-        </div>
-      </Card>
+        <div style={{ padding: "14px" }}>
+          <label style={{ ...fieldLabel, marginTop: 0 }}>Tipo</label>
+          {typeToggle(newRecType, (v) => {
+            setNewRecType(v);
+            setNewRecCategory(categoriesFor(v)[0]);
+          })}
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginTop: 14,
-          padding: "12px 14px",
-          background: INK,
-          borderRadius: 8,
-        }}
-      >
-        <span style={{ fontSize: 13, color: CREAM_TEXT, fontWeight: 600 }}>Saldo disponível</span>
-        <span
-          style={{
-            fontFamily: "'IBM Plex Mono', monospace",
-            fontSize: 16,
-            fontWeight: 700,
-            color: saldoDisponivel >= 0 ? "#9ED0B4" : CORAL,
-          }}
-        >
-          {fmtBRL(saldoDisponivel)}
-        </span>
-      </div>
+          <label style={fieldLabel}>Categoria</label>
+          <select value={newRecCategory} onChange={(e) => setNewRecCategory(e.target.value)} style={fieldInput}>
+            {categoriesFor(newRecType).map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
 
-      <SectionLabel style={{ marginTop: 22 }}>Orçamento de {monthLabel}</SectionLabel>
-      <Card>
-        {CATEGORY_LIST.map((c, i) => (
-          <div key={c} style={rowStyle(i === CATEGORY_LIST.length - 1)}>
-            <span style={{ fontSize: 13, flex: 1 }}>{c}</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={localValues[c]}
-              onChange={(e) => setLocalValues((v) => ({ ...v, [c]: e.target.value }))}
-              style={numberInputStyle}
-            />
-          </div>
-        ))}
-      </Card>
-
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, padding: "0 4px" }}>
-        <span style={{ fontSize: 12, color: MUTED }}>Total planejado</span>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
-          {fmtBRL(total)}
-        </span>
-      </div>
-
-      <button
-        onClick={handleSave}
-        style={{
-          marginTop: 18,
-          width: "100%",
-          background: saved ? TEAL : INK,
-          color: CREAM_TEXT,
-          border: "none",
-          borderRadius: 8,
-          padding: "13px",
-          fontSize: 13.5,
-          fontWeight: 600,
-          letterSpacing: 0.3,
-        }}
-      >
-        {saved ? "Salvo ✓" : `Salvar orçamento de ${monthLabel}`}
-      </button>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* History view                                                        */
-/* ------------------------------------------------------------------ */
-function HistoryView({ expenses, onDelete }) {
-  const sorted = [...expenses].sort((a, b) => (a.date < b.date ? 1 : -1));
-  if (sorted.length === 0) {
-    return (
-      <div style={{ textAlign: "center", padding: "40px 10px", color: MUTED, fontSize: 13 }}>
-        Nenhum gasto lançado neste período ainda.
-        <br />
-        Toque no + para registrar o primeiro, ou conecte seu banco em Config.
-      </div>
-    );
-  }
-  return (
-    <Card>
-      {sorted.map((e, i) => (
-        <div
-          key={e.id}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "12px 14px",
-            borderBottom: i === sorted.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-          }}
-        >
-          <div style={{ fontSize: 16, width: 22, textAlign: "center", color: MUTED }}>
-            {e.type === "income" ? INCOME_META[e.category]?.icon || "+" : CATEGORY_META[e.category]?.icon || "•"}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 500 }}>{e.category}</div>
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
-              {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
-              {e.note ? ` · ${e.note}` : ""}
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabel}>Valor (R$)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={newRecAmount}
+                onChange={(e) => setNewRecAmount(e.target.value)}
+                placeholder="0,00"
+                style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+              />
+            </div>
+            <div style={{ width: 90 }}>
+              <label style={fieldLabel}>Dia do mês</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={31}
+                value={newRecDay}
+                onChange={(e) => setNewRecDay(e.target.value)}
+                style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+              />
             </div>
           </div>
-          <div
+
+          <label style={fieldLabel}>Nota (opcional)</label>
+          <input
+            type="text"
+            value={newRecNote}
+            onChange={(e) => setNewRecNote(e.target.value)}
+            placeholder="ex: aluguel, salário"
+            style={fieldInput}
+          />
+
+          <button
+            onClick={handleAddRecurring}
+            disabled={!(Number(newRecAmount) > 0)}
             style={{
-              fontFamily: "'IBM Plex Mono', monospace",
-              fontSize: 13.5,
+              marginTop: 14,
+              width: "100%",
+              background: Number(newRecAmount) > 0 ? TEAL : PAPER_LINE,
+              color: Number(newRecAmount) > 0 ? CREAM_TEXT : MUTED,
+              border: "none",
+              borderRadius: 8,
+              padding: "11px",
+              fontSize: 13,
               fontWeight: 600,
-              color: e.type === "income" ? TEAL : INK,
             }}
           >
-            {e.type === "income" ? "+ " : ""}
-            {fmtBRL(e.amount)}
-          </div>
-          <button
-            onClick={() => onDelete(e.id)}
-            aria-label="Excluir gasto"
-            style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
-          >
-            <Trash2 size={15} />
+            Adicionar recorrente
           </button>
         </div>
-      ))}
-    </Card>
+      </Card>
+
+      <SectionLabel style={{ marginTop: 22 }}>Lançamentos pontuais futuros</SectionLabel>
+      {sortedForecasts.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: MUTED, marginBottom: 14 }}>
+          Nenhum lançamento pontual futuro ainda — ex: uma viagem, uma compra
+          grande já planejada.
+        </div>
+      ) : (
+        <Card>
+          {sortedForecasts.map((f, i) => (
+            <div
+              key={f.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 14px",
+                borderBottom: i === sortedForecasts.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>
+                  {f.category}
+                  {f.note ? ` · ${f.note}` : ""}
+                </div>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                  {new Date(f.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                </div>
+              </div>
+              <div
+                style={{
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: f.type === "income" ? TEAL : INK,
+                }}
+              >
+                {f.type === "income" ? "+ " : "− "}
+                {fmtBRL(f.amount)}
+              </div>
+              <button
+                onClick={() => onDeleteForecast(f.id)}
+                aria-label="Excluir lançamento pontual"
+                style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      <Card>
+        <div style={{ padding: "14px" }}>
+          <label style={{ ...fieldLabel, marginTop: 0 }}>Tipo</label>
+          {typeToggle(newFcType, (v) => {
+            setNewFcType(v);
+            setNewFcCategory(categoriesFor(v)[0]);
+          })}
+
+          <label style={fieldLabel}>Categoria</label>
+          <select value={newFcCategory} onChange={(e) => setNewFcCategory(e.target.value)} style={fieldInput}>
+            {categoriesFor(newFcType).map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabel}>Valor (R$)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={newFcAmount}
+                onChange={(e) => setNewFcAmount(e.target.value)}
+                placeholder="0,00"
+                style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+              />
+            </div>
+            <div style={{ width: 130 }}>
+              <label style={fieldLabel}>Data</label>
+              <input
+                type="date"
+                value={newFcDate}
+                onChange={(e) => setNewFcDate(e.target.value)}
+                style={fieldInput}
+              />
+            </div>
+          </div>
+
+          <label style={fieldLabel}>Nota (opcional)</label>
+          <input
+            type="text"
+            value={newFcNote}
+            onChange={(e) => setNewFcNote(e.target.value)}
+            placeholder="ex: viagem de fim de ano"
+            style={fieldInput}
+          />
+
+          <button
+            onClick={handleAddForecast}
+            disabled={!(Number(newFcAmount) > 0)}
+            style={{
+              marginTop: 14,
+              width: "100%",
+              background: Number(newFcAmount) > 0 ? TEAL : PAPER_LINE,
+              color: Number(newFcAmount) > 0 ? CREAM_TEXT : MUTED,
+              border: "none",
+              borderRadius: 8,
+              padding: "11px",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            Adicionar lançamento pontual
+          </button>
+        </div>
+      </Card>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 22 }}>
+        <SectionLabel style={{ marginBottom: 0 }}>
+          <CreditCard size={12} style={{ marginRight: 4, verticalAlign: "-2px" }} />
+          Faturas de cartão (automático)
+        </SectionLabel>
+      </div>
+
+      {!hasBank ? (
+        <div style={{ fontSize: 12.5, color: MUTED, marginTop: 8 }}>
+          Conecte seu banco em Config pra prever a fatura do cartão automaticamente.
+        </div>
+      ) : (
+        <>
+          <button
+            onClick={onFetchCards}
+            disabled={ccStatus === "loading"}
+            style={{
+              width: "100%",
+              marginTop: 10,
+              background: creditCards.length > 0 ? "#F5F1E5" : TEAL,
+              color: creditCards.length > 0 ? INK : CREAM_TEXT,
+              border: creditCards.length > 0 ? `1px solid ${PAPER_LINE}` : "none",
+              borderRadius: 8,
+              padding: "11px",
+              fontSize: 13,
+              fontWeight: 600,
+              opacity: ccStatus === "loading" ? 0.6 : 1,
+            }}
+          >
+            {ccStatus === "loading" ? "Buscando faturas…" : creditCards.length > 0 ? "Atualizar faturas" : "Buscar faturas"}
+          </button>
+
+          {sortedCardForecasts.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: MUTED, marginTop: 10 }}>
+              Nenhuma fatura futura calculada ainda.
+            </div>
+          ) : (
+            <Card>
+              {sortedCardForecasts.map((f, i) => (
+                <div
+                  key={f.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 14px",
+                    borderBottom: i === sortedCardForecasts.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13 }}>{f.note}</div>
+                    <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+                      vence em {new Date(f.date).toLocaleDateString("pt-BR")}
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
+                    {fmtBRL(f.amount)}
+                  </div>
+                </div>
+              ))}
+            </Card>
+          )}
+          <div style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>
+            Esses valores entram automaticamente no Fluxo de Caixa como previsão
+            de saída, na data estimada de vencimento.
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -1797,29 +1748,29 @@ function InvestmentsView({ aportes, rendimento, resgates, accumulated, entries, 
 
   return (
     <div>
-      <SectionLabel>Acumulado até o fim do período</SectionLabel>
+      <SectionLabel>Acumulado</SectionLabel>
       <Card>
         <div style={{ padding: "16px 14px", textAlign: "center" }}>
           <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 32 }}>
             {fmtBRL(accumulated)}
           </div>
           <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>
-            soma de todos os aportes + rendimento − resgates até aqui
+            soma de todos os aportes + rendimento − resgates até hoje
           </div>
         </div>
       </Card>
 
-      <SectionLabel style={{ marginTop: 22 }}>Neste período</SectionLabel>
+      <SectionLabel style={{ marginTop: 22 }}>Total histórico</SectionLabel>
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
         <InvestSummaryCard label="Aportes" value={aportes} meta={INVESTMENT_TYPE_META.aporte} />
         <InvestSummaryCard label="Rendimento" value={rendimento} meta={INVESTMENT_TYPE_META.rendimento} />
         <InvestSummaryCard label="Resgates" value={resgates} meta={INVESTMENT_TYPE_META.resgate} />
       </div>
 
-      <SectionLabel>Lançamentos do período</SectionLabel>
+      <SectionLabel>Lançamentos</SectionLabel>
       {sorted.length === 0 ? (
         <div style={{ textAlign: "center", padding: "30px 10px", color: MUTED, fontSize: 13 }}>
-          Nenhum lançamento de rendimento neste período ainda.
+          Nenhum lançamento de rendimento ainda.
           <br />
           Toque no + para registrar um aporte, rendimento ou resgate.
         </div>
@@ -1893,9 +1844,8 @@ function InvestSummaryCard({ label, value, meta }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Cálculo de ciclo/fatura de cartão de crédito — compartilhado entre   */
-/* a aba Cartão e o resumo da aba Orçamento, pra nunca ter duas contas  */
-/* (potencialmente divergentes) do mesmo valor de fatura.              */
+/* Cálculo de ciclo/fatura de cartão de crédito — motor validado,       */
+/* reaproveitado pela previsão automática de fatura em Previsto.        */
 /* ------------------------------------------------------------------ */
 function computeCardCycleData(card, { cursor, viewMode, closeDay, forecastIsUnreliable, today }) {
   const BILL_CLOSE_DAY = closeDay || 3;
@@ -2047,424 +1997,9 @@ function computeCardCycleData(card, { cursor, viewMode, closeDay, forecastIsUnre
 }
 
 /* ------------------------------------------------------------------ */
-/* Credit card (Cartão de Crédito) view                                */
+/* Config view                                                         */
 /* ------------------------------------------------------------------ */
-function CreditCardsView({
-  hasBank,
-  cards,
-  status,
-  onFetch,
-  selectedCardId,
-  onSelectCard,
-  itemStatuses,
-  onSummaryChange,
-  cursor,
-  viewMode,
-  rotativoRate,
-  cardCloseDays,
-  cardUnreliableForecast,
-}) {
-  const loading = status === "loading";
-  const selectedCard = cards.find((c) => c.id === selectedCardId) || cards[0] || null;
-  const forecastIsUnreliable = !!(selectedCard && cardUnreliableForecast[selectedCard.id]);
-  // Diagnóstico temporário — investigando parcelas caindo na fatura
-  // errada quando há vários meses de parcelamento pela frente.
-  const [showDiagnostic, setShowDiagnostic] = useState(false);
-
-  // O dia em que a fatura fecha muda de banco pra banco, e a confiança na
-  // data prevista pra parcela futura também — ambos configurados por
-  // cartão em Configurações. O cálculo de ciclo/fatura em si é
-  // compartilhado com o resumo da aba Orçamento (computeCardCycleData),
-  // pra nunca ter duas contas divergentes do mesmo valor.
-  const BILL_CLOSE_DAY = (selectedCard && cardCloseDays[selectedCard.id]) || 3;
-  const today = todayISO();
-  const {
-    allCardTransactions,
-    cycleMonthKey,
-    stripInstallmentSuffix,
-    descriptionsMatch,
-    nextMonthKey,
-    effectiveCycleKey,
-    normalizeDescription,
-    isInvoicePayment,
-    cycleGroups,
-    todayCycleKey,
-    selectedCycleKeys,
-    billTransactions,
-    periodTotal,
-    isCurrentCycle,
-    isFutureCycle,
-    summaryLabel,
-  } = computeCardCycleData(selectedCard, {
-    cursor,
-    viewMode,
-    closeDay: BILL_CLOSE_DAY,
-    forecastIsUnreliable,
-    today,
-  });
-
-  // Diagnóstico temporário — mesma lógica do effectiveCycleKey, mas
-  // devolvendo o "porquê" (qual âncora foi usada, ou se caiu no
-  // fallback da data bruta) pra investigar caso a caso com a usuária.
-  const anchorDebugInfo = (tx) => {
-    if (!tx.totalInstallments || tx.totalInstallments <= 1 || !tx.installmentNumber) {
-      return "sem parcelamento";
-    }
-    if ((tx.date || "").slice(0, 10) <= today) {
-      return "data já realizada (<= hoje), usa data própria";
-    }
-    const rawKey = cycleMonthKey(tx.date || "");
-    const txBaseDescription = stripInstallmentSuffix(
-      tx.description,
-      tx.installmentNumber,
-      tx.totalInstallments
-    );
-    const realizedSiblings = allCardTransactions.filter(
-      (o) =>
-        (o.date || "").slice(0, 10) <= today &&
-        o.installmentNumber &&
-        Number(o.totalInstallments) === Number(tx.totalInstallments) &&
-        descriptionsMatch(
-          stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments),
-          txBaseDescription
-        )
-    );
-    if (forecastIsUnreliable && realizedSiblings.length >= 1) {
-      const anchor = realizedSiblings.reduce((a, b) =>
-        b.installmentNumber > a.installmentNumber ? b : a
-      );
-      return `cartão marcado como previsão não confiável — âncora: parcela ${anchor.installmentNumber}/${anchor.totalInstallments} em ${(anchor.date || "").slice(0, 10)} (ciclo ${cycleMonthKey(anchor.date || "")}), ignora data própria (raw seria: ${rawKey})`;
-    }
-    const previous = allCardTransactions.find(
-      (o) =>
-        o.installmentNumber === tx.installmentNumber - 1 &&
-        Number(o.totalInstallments) === Number(tx.totalInstallments) &&
-        descriptionsMatch(
-          stripInstallmentSuffix(o.description, o.installmentNumber, o.totalInstallments),
-          txBaseDescription
-        )
-    );
-    if (!previous) {
-      return `sem parcela anterior encontrada — usa data própria (raw: ${rawKey})`;
-    }
-    const floorKey = nextMonthKey(effectiveCycleKey(previous));
-    return rawKey > floorKey
-      ? `usa data própria (raw: ${rawKey}), à frente do mínimo (${floorKey})`
-      : `data própria (raw: ${rawKey}) vinha igual/atrás da parcela anterior — usa o mínimo: ${floorKey}`;
-  };
-
-  const displayedTransactions = showDiagnostic
-    ? [...allCardTransactions].sort((a, b) => new Date(b.date) - new Date(a.date))
-    : billTransactions;
-
-  // Saldo rotativo: quando a fatura anterior não é paga por completo, o
-  // que falta vira dívida que fica rendendo juros todo dia até ser quitada.
-  // Um pagamento (valor negativo) feito dentro do ciclo atual é o que
-  // quita a fatura fechada do ciclo anterior — se o total pago for menor
-  // que o total daquela fatura, a diferença é o saldo rotativo em aberto.
-  const paymentsByRealizedCycle = new Map();
-  allCardTransactions.forEach((tx) => {
-    if (!isInvoicePayment(tx)) return;
-    const key = cycleMonthKey(tx.date || "");
-    paymentsByRealizedCycle.set(key, (paymentsByRealizedCycle.get(key) || 0) + Math.abs(tx.amount));
-  });
-  const previousCycleKeyOf = (key) => {
-    const [y, m] = key.split("-").map(Number);
-    const dt = new Date(y, m - 2, 1);
-    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
-  };
-  const previousCycleKey = previousCycleKeyOf(selectedCycleKeys[0] || todayCycleKey);
-  const previousCycleTotal = (cycleGroups.get(previousCycleKey) || []).reduce(
-    (s, tx) => s + tx.amount,
-    0
-  );
-  const paidTowardPreviousCycle = paymentsByRealizedCycle.get(selectedCycleKeys[0]) || 0;
-  // O Nubank informa o saldo rotativo de verdade (transação "Saldo em
-  // rotativo", postada dentro da fatura fechada anterior) — usa esse
-  // valor real quando existir. Só estima (fatura anterior menos o que
-  // foi pago) quando o banco não manda esse dado, como o Itaú.
-  const realRotativoTx = allCardTransactions.find(
-    (tx) =>
-      normalizeDescription(tx.description).startsWith("saldo em rotativo") &&
-      cycleMonthKey(tx.date || "") === previousCycleKey
-  );
-  const rotativoIsReal = isCurrentCycle && !!realRotativoTx;
-  const rotativoBalance = !isCurrentCycle
-    ? 0
-    : realRotativoTx
-    ? Math.abs(realRotativoTx.amount)
-    : Math.max(0, previousCycleTotal - paidTowardPreviousCycle);
-  // Os juros/IOF de verdade só aparecem DEPOIS que o saldo é quitado
-  // (postados junto com "Encerramento de dívida") — não dá pra saber o
-  // juro real enquanto a dívida ainda está em aberto, então a previsão
-  // de juro diário continua sendo uma estimativa pela taxa configurada.
-  const dailyInterest = (rotativoBalance * (Number(rotativoRate) || 0)) / 100 / 30;
-
-  useEffect(() => {
-    if (!onSummaryChange) return;
-    if (!selectedCard) {
-      onSummaryChange(null);
-      return;
-    }
-    onSummaryChange({
-      cardName: selectedCard.name,
-      label: summaryLabel,
-      total: periodTotal,
-      dueDate: null,
-    });
-  }, [selectedCard, summaryLabel, periodTotal, onSummaryChange]);
-
-  if (!hasBank) {
-    return (
-      <div style={{ textAlign: "center", padding: "40px 10px", color: MUTED, fontSize: 13 }}>
-        Conecte seu banco em Config primeiro — a leitura de faturas usa a
-        mesma conexão do Meu Pluggy.
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <button
-        onClick={onFetch}
-        disabled={loading}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-          background: cards.length > 0 ? "#F5F1E5" : TEAL,
-          color: cards.length > 0 ? INK : CREAM_TEXT,
-          border: cards.length > 0 ? `1px solid ${PAPER_LINE}` : "none",
-          borderRadius: 8,
-          padding: "11px",
-          fontSize: 13,
-          fontWeight: 600,
-          marginBottom: 18,
-          opacity: loading ? 0.6 : 1,
-        }}
-      >
-        {loading ? "Buscando faturas…" : cards.length > 0 ? "Atualizar faturas" : "Buscar faturas"}
-      </button>
-
-      {itemStatuses.length > 0 && (
-        <div style={{ marginTop: -10, marginBottom: 16 }}>
-          {itemStatuses.map((s) => (
-            <div
-              key={s.itemId}
-              style={{
-                fontSize: 11,
-                color: s.status === "UPDATED" ? MUTED : CORAL,
-                textAlign: "center",
-              }}
-            >
-              {s.label}: {ITEM_STATUS_LABEL[s.status] || s.status || "Status da conexão desconhecido"}
-              {s.lastUpdatedAt
-                ? ` · última sincronização ${new Date(s.lastUpdatedAt).toLocaleString("pt-BR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    year: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}`
-                : ""}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {cards.length === 0 && !loading && (
-        <div style={{ textAlign: "center", padding: "20px 10px", color: MUTED, fontSize: 13 }}>
-          Nenhum cartão carregado ainda. Toque em "Buscar faturas" — isso
-          consulta o Itaú e o Nubank conectados via Meu Pluggy.
-        </div>
-      )}
-
-      {cards.length > 1 && (
-        <>
-          <SectionLabel>Cartão</SectionLabel>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
-            {cards.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => onSelectCard(c.id)}
-              style={{
-                flexShrink: 0,
-                background: selectedCard?.id === c.id ? INK : "#F5F1E5",
-                color: selectedCard?.id === c.id ? CREAM_TEXT : INK,
-                border: `1px solid ${selectedCard?.id === c.id ? INK : PAPER_LINE}`,
-                borderRadius: 20,
-                padding: "6px 14px",
-                fontSize: 12,
-                fontWeight: 600,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {c.name}
-            </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {selectedCard && (
-        <>
-          <SectionLabel>Limite</SectionLabel>
-          <Card>
-            <div style={{ padding: "14px", display: "flex", justifyContent: "space-between", gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                  Disponível
-                </div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2 }}>
-                  {selectedCard.availableCreditLimit != null ? fmtBRL(selectedCard.availableCreditLimit) : "—"}
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                  Limite total
-                </div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2 }}>
-                  {selectedCard.creditLimit != null ? fmtBRL(selectedCard.creditLimit) : "—"}
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          {rotativoBalance > 0 && (
-            <>
-              <SectionLabel style={{ marginTop: 22 }}>Saldo rotativo</SectionLabel>
-              <Card>
-                <div style={{ padding: "14px", display: "flex", justifyContent: "space-between", gap: 10 }}>
-                  <div>
-                    <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      Em aberto {rotativoIsReal ? "· valor real" : "· estimado"}
-                    </div>
-                    <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2, color: CORAL }}>
-                      {fmtBRL(rotativoBalance)}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10.5, color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      Juros por dia (estimado, {rotativoRate}% a.m.)
-                    </div>
-                    <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2, color: CORAL }}>
-                      {fmtBRL(dailyInterest)}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ fontSize: 11, color: MUTED, padding: "0 14px 12px" }}>
-                  {rotativoIsReal
-                    ? "Saldo informado pelo próprio banco na fatura anterior. O juro real só aparece depois que a dívida for quitada — o valor por dia acima é uma previsão pela taxa configurada."
-                    : "A fatura anterior não foi paga por completo — esse saldo continua rendendo juros até ser quitado."}
-                </div>
-              </Card>
-            </>
-          )}
-
-          {selectedCard.billsError && (
-            <div
-              style={{
-                background: "#F3D9D3",
-                color: CORAL,
-                fontSize: 11.5,
-                padding: "8px 10px",
-                borderRadius: 6,
-                marginTop: 12,
-                marginBottom: 4,
-              }}
-            >
-              Não consegui separar por fatura nesse cartão ({selectedCard.billsError}) — mostrando todos os lançamentos juntos abaixo.
-            </div>
-          )}
-
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 22 }}>
-            <SectionLabel style={{ marginTop: 0 }}>
-              {showDiagnostic
-                ? "Lançamentos · tudo, sem separar por fatura (diagnóstico)"
-                : isCurrentCycle
-                ? "Lançamentos · fatura em aberto"
-                : isFutureCycle
-                ? "Lançamentos · ainda não fechou"
-                : "Lançamentos"}
-            </SectionLabel>
-            <button
-              onClick={() => setShowDiagnostic((v) => !v)}
-              style={{
-                background: "none",
-                border: "none",
-                color: TEAL,
-                fontSize: 11,
-                fontWeight: 600,
-                textDecoration: "underline",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {showDiagnostic ? "Ver por fatura" : "Ver tudo (diagnóstico)"}
-            </button>
-          </div>
-          {displayedTransactions.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "20px 10px", color: MUTED, fontSize: 13 }}>
-              Nenhum lançamento encontrado nesse período.
-            </div>
-          ) : (
-            <Card>
-              {displayedTransactions.map((tx, i) => (
-                <div
-                  key={tx.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "12px 14px",
-                    borderBottom: i === displayedTransactions.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>{tx.description || "(sem descrição)"}</div>
-                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
-                      {new Date(tx.date).toLocaleDateString("pt-BR")}
-                      {tx.installmentNumber && tx.totalInstallments
-                        ? ` · parcela ${tx.installmentNumber}/${tx.totalInstallments}`
-                        : ""}
-                    </div>
-                    {showDiagnostic && (
-                      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: CORAL, marginTop: 2 }}>
-                        billId: {tx.billId ? "sim" : "não"} · ciclo calculado: {effectiveCycleKey(tx)}
-                        <br />
-                        {anchorDebugInfo(tx)}
-                      </div>
-                    )}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: "'IBM Plex Mono', monospace",
-                      fontSize: 13.5,
-                      fontWeight: 600,
-                      color: tx.amount > 0 ? INK : TEAL,
-                    }}
-                  >
-                    {tx.amount > 0 ? "-" : "+"}
-                    {fmtBRL(Math.abs(tx.amount))}
-                  </div>
-                </div>
-              ))}
-            </Card>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Settings view                                                       */
-/* ------------------------------------------------------------------ */
-function SettingsView({
-  budgets,
-  income,
-  onSave,
+function ConfigView({
   rotativoRate,
   onSaveRotativoRate,
   creditCards,
@@ -2473,6 +2008,7 @@ function SettingsView({
   cardUnreliableForecast,
   onSaveCardUnreliableForecast,
   bankItems,
+  itemStatuses,
   bankStatus,
   onConnectBank,
   onRefreshAll,
@@ -2482,8 +2018,6 @@ function SettingsView({
   onRemoveCategory,
   onResetData,
 }) {
-  const [localBudgets, setLocalBudgets] = useState(budgets);
-  const [localIncome, setLocalIncome] = useState(income || "");
   const [localRotativoRate, setLocalRotativoRate] = useState(rotativoRate ?? 16);
   const [localCardCloseDays, setLocalCardCloseDays] = useState(cardCloseDays || {});
   const [localCardUnreliableForecast, setLocalCardUnreliableForecast] = useState(
@@ -2491,27 +2025,9 @@ function SettingsView({
   );
   const [saved, setSaved] = useState(false);
   const [newCatName, setNewCatName] = useState("");
-  const [newCatKind, setNewCatKind] = useState("expense"); // "expense" | "income"
-  const [newCatDiaDia, setNewCatDiaDia] = useState(false);
+  const [newCatKind, setNewCatKind] = useState("expense");
   const [resetDone, setResetDone] = useState(false);
   const [copiedItemId, setCopiedItemId] = useState(null);
-
-  // Quando uma categoria personalizada é adicionada/removida, CATEGORY_LIST
-  // muda — garante que o formulário de orçamento tenha uma linha (com 0)
-  // pra qualquer categoria nova, sem perder o que já foi digitado.
-  useEffect(() => {
-    setLocalBudgets((lb) => {
-      let changed = false;
-      const merged = { ...lb };
-      CATEGORY_LIST.forEach((c) => {
-        if (!(c in merged)) {
-          merged[c] = 0;
-          changed = true;
-        }
-      });
-      return changed ? merged : lb;
-    });
-  }, [customCategories]);
 
   // Garante uma linha (com o padrão de dia 3) pra cada cartão já
   // carregado, sem perder o que já foi digitado pra outros.
@@ -2530,11 +2046,6 @@ function SettingsView({
   }, [creditCards]);
 
   const handleSave = () => {
-    const cleaned = {};
-    Object.keys(localBudgets).forEach((k) => {
-      cleaned[k] = Number(localBudgets[k]) || 0;
-    });
-    onSave(cleaned, Number(localIncome) || 0);
     onSaveRotativoRate(Number(localRotativoRate) || 0);
     const cleanedCloseDays = {};
     Object.keys(localCardCloseDays).forEach((id) => {
@@ -2548,10 +2059,9 @@ function SettingsView({
 
   const handleAddCategory = () => {
     if (!newCatName.trim()) return;
-    onAddCategory(newCatName, newCatKind, newCatDiaDia);
+    onAddCategory(newCatName, newCatKind);
     setNewCatName("");
     setNewCatKind("expense");
-    setNewCatDiaDia(false);
   };
 
   const handleResetData = () => {
@@ -2570,8 +2080,8 @@ function SettingsView({
       setCopiedItemId(itemId);
       setTimeout(() => setCopiedItemId((id) => (id === itemId ? null : id)), 2000);
     } catch (_) {
-      // Clipboard API pode falhar (ex: sem HTTPS ou sem permissão) — sem
-      // fallback, o ID continua visível na tela pra copiar manualmente.
+      // Clipboard API pode falhar — sem fallback, o ID continua visível na
+      // tela pra copiar manualmente.
     }
   };
 
@@ -2658,6 +2168,32 @@ function SettingsView({
             </div>
           )}
 
+          {itemStatuses.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              {itemStatuses.map((s) => (
+                <div
+                  key={s.itemId}
+                  style={{
+                    fontSize: 11,
+                    color: s.status === "UPDATED" ? MUTED : CORAL,
+                    textAlign: "center",
+                  }}
+                >
+                  {s.label}: {ITEM_STATUS_LABEL[s.status] || s.status || "Status da conexão desconhecido"}
+                  {s.lastUpdatedAt
+                    ? ` · última sincronização ${new Date(s.lastUpdatedAt).toLocaleString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}`
+                    : ""}
+                </div>
+              ))}
+            </div>
+          )}
+
           <button
             onClick={onConnectBank}
             disabled={busy}
@@ -2713,31 +2249,6 @@ function SettingsView({
         </div>
       </Card>
 
-      <SectionLabel style={{ marginTop: 22 }}>Renda mensal (opcional)</SectionLabel>
-      <Card>
-        <div style={{ padding: "12px 14px" }}>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={localIncome}
-            onChange={(e) => setLocalIncome(e.target.value)}
-            placeholder="0,00"
-            style={{
-              width: "100%",
-              border: `1px solid ${PAPER_LINE}`,
-              borderRadius: 6,
-              padding: "8px 10px",
-              fontFamily: "'IBM Plex Mono', monospace",
-              fontSize: 14,
-              background: PAPER,
-            }}
-          />
-          <div style={{ fontSize: 11, color: MUTED, marginTop: 6 }}>
-            Usada para mostrar quanto sobra no mês/ano.
-          </div>
-        </div>
-      </Card>
-
       <SectionLabel style={{ marginTop: 22 }}>Juros do rotativo do cartão</SectionLabel>
       <Card>
         <div style={{ padding: "12px 14px" }}>
@@ -2758,9 +2269,8 @@ function SettingsView({
             }}
           />
           <div style={{ fontSize: 11, color: MUTED, marginTop: 6 }}>
-            Taxa mensal (% a.m.) cobrada quando a fatura não é paga integralmente. A
-            Pluggy não informa isso — confira no app do banco/contrato do cartão.
-            Usada para estimar o juro diário do saldo rotativo, na aba Cartão.
+            Taxa mensal (% a.m.) cobrada quando a fatura não é paga integralmente.
+            A Pluggy não informa isso — confira no app do banco/contrato do cartão.
           </div>
         </div>
       </Card>
@@ -2851,47 +2361,6 @@ function SettingsView({
         </>
       )}
 
-      <SectionLabel style={{ marginTop: 22 }}>Orçamento padrão por categoria</SectionLabel>
-      <Card>
-        <div style={{ fontSize: 11, color: MUTED, padding: "10px 14px 4px" }}>
-          Valor usado em qualquer mês que não tenha um orçamento específico
-          definido na aba Orçamento. Pra ajustar mês a mês, use aquela aba.
-        </div>
-        {CATEGORY_LIST.map((c, i) => (
-          <div
-            key={c}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-              padding: "10px 14px",
-              borderBottom: i === CATEGORY_LIST.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-            }}
-          >
-            <span style={{ fontSize: 13, flex: 1 }}>{c}</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={localBudgets[c]}
-              onChange={(e) =>
-                setLocalBudgets((b) => ({ ...b, [c]: e.target.value }))
-              }
-              style={{
-                width: 90,
-                border: `1px solid ${PAPER_LINE}`,
-                borderRadius: 6,
-                padding: "6px 8px",
-                fontFamily: "'IBM Plex Mono', monospace",
-                fontSize: 13,
-                textAlign: "right",
-                background: PAPER,
-              }}
-            />
-          </div>
-        ))}
-      </Card>
-
       <SectionLabel style={{ marginTop: 22 }}>Nova categoria</SectionLabel>
       <Card>
         <div style={{ padding: "14px" }}>
@@ -2929,40 +2398,6 @@ function SettingsView({
             ))}
           </div>
 
-          {newCatKind === "expense" && (
-            <>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginTop: 12,
-                  fontSize: 13,
-                  color: INK,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={newCatDiaDia}
-                  onChange={(e) => setNewCatDiaDia(e.target.checked)}
-                  style={{ width: 16, height: 16, accentColor: TEAL }}
-                />
-                Dia a Dia
-              </label>
-              <div style={{ fontSize: 11, color: MUTED, marginTop: 4, marginLeft: 24 }}>
-                Marque se esses gastos devem contar no comparativo "Dia a dia" da
-                tela inicial. Deixe desmarcado pra uma categoria neutra (não entra
-                nem em Dia a dia, nem em Lazer).
-              </div>
-            </>
-          )}
-          {newCatKind === "income" && (
-            <div style={{ fontSize: 11, color: MUTED, marginTop: 10 }}>
-              Categorias de entrada não têm orçamento nem entram no comparativo
-              Dia a dia/Lazer — só ajudam a identificar de onde veio o dinheiro.
-            </div>
-          )}
-
           <button
             onClick={handleAddCategory}
             disabled={!newCatName.trim()}
@@ -2999,11 +2434,7 @@ function SettingsView({
                 <div>
                   <div style={{ fontSize: 13 }}>{c.name}</div>
                   <div style={{ fontSize: 10.5, color: MUTED, marginTop: 1 }}>
-                    {c.kind === "income"
-                      ? "Entrada"
-                      : c.diaDia
-                      ? "Despesa · conta em Dia a dia"
-                      : "Despesa · categoria neutra"}
+                    {c.kind === "income" ? "Entrada" : "Despesa"}
                   </div>
                 </div>
                 <button
@@ -3043,7 +2474,8 @@ function SettingsView({
           <div style={{ fontSize: 13, marginBottom: 10, color: INK }}>
             Apaga gastos, entradas, investimentos e dados do cartão salvos
             neste aparelho. A conexão com o banco, as categorias
-            personalizadas e o orçamento continuam salvos.
+            personalizadas e as previsões (recorrentes e pontuais) continuam
+            salvas.
           </div>
           <button
             onClick={handleResetData}
@@ -3072,8 +2504,8 @@ function SettingsView({
 }
 
 /* ------------------------------------------------------------------ */
-/* Import review modal — transações vindas do banco, aguardando        */
-/* confirmação de categoria antes de entrarem no histórico             */
+/* Import review modal — transações vindas do banco/cartão, aguardando */
+/* confirmação de categoria antes de entrarem no Realizado             */
 /* ------------------------------------------------------------------ */
 function ImportReviewModal({ candidates, onCancel, onConfirm }) {
   const [list, setList] = useState(candidates);
@@ -3091,14 +2523,11 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
 
   const includedCount = list.filter((c) => c.include).length;
 
-  // Mais novo primeiro, pra categorizar começando pelo lançamento mais recente.
   const sortedList = useMemo(
     () => [...list].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
     [list]
   );
 
-  // Meses presentes no lote, do mais recente pro mais antigo — vira o filtro
-  // que ajuda a conferir se já categorizou tudo de um mês específico.
   const months = useMemo(() => {
     const set = new Set(sortedList.map((c) => c.date.slice(0, 7)));
     return [...set].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
@@ -3151,7 +2580,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
         <div style={{ fontSize: 11.5, color: MUTED, padding: "0 18px 10px" }}>
           {list.length === 0
             ? "Nenhum lançamento novo encontrado nos últimos 90 dias."
-            : "Confira a categoria de cada lançamento — despesas já vêm com sugestão quando possível; entradas comuns (salário, PIX recebido) você categoriza na mão; lançamentos de investimento (aporte/resgate) vão direto pra aba Investimentos, fora dos totais da tela inicial. Desmarque o que não quiser importar."}
+            : "Confira a categoria de cada lançamento — despesas já vêm com sugestão quando possível; entradas comuns (salário, PIX recebido) você categoriza na mão; lançamentos de investimento (aporte/resgate) vão direto pra aba Investimentos. Compras no cartão aparecem marcadas — elas entram no Realizado, mas não afetam o saldo do Fluxo de Caixa (só a fatura paga afeta). Desmarque o que não quiser importar."}
         </div>
 
         {months.length > 1 && (
@@ -3266,6 +2695,23 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                         Investimento
                       </span>
                     )}
+                    {c.source === "cartao" && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontSize: 9.5,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
+                          color: MUTED,
+                          border: `1px solid ${MUTED}`,
+                          borderRadius: 4,
+                          padding: "1px 5px",
+                        }}
+                      >
+                        Cartão
+                      </span>
+                    )}
                   </span>
                   <span
                     style={{
@@ -3355,14 +2801,21 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Add expense modal                                                   */
+/* Add expense/income modal — lançamento manual no Realizado           */
 /* ------------------------------------------------------------------ */
 function AddExpenseModal({ onClose, onAdd }) {
+  const [type, setType] = useState("expense");
   const [category, setCategory] = useState(CATEGORY_LIST[0]);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayISO());
   const [note, setNote] = useState("");
   const valid = Number(amount) > 0;
+  const categoryList = type === "income" ? INCOME_CATEGORY_LIST : CATEGORY_LIST;
+
+  useEffect(() => {
+    setCategory(categoryList[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type]);
 
   return (
     <div
@@ -3388,28 +2841,39 @@ function AddExpenseModal({ onClose, onAdd }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 18 }}>Novo gasto</span>
+          <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 18 }}>Novo lançamento</span>
           <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED }}>
             <X size={20} />
           </button>
         </div>
 
+        <label style={{ ...fieldLabel, marginTop: 0 }}>Tipo</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[{ id: "expense", label: "Despesa" }, { id: "income", label: "Entrada" }].map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setType(opt.id)}
+              style={{
+                flex: 1,
+                background: type === opt.id ? INK : "#F5F1E5",
+                color: type === opt.id ? CREAM_TEXT : INK,
+                border: `1px solid ${type === opt.id ? INK : PAPER_LINE}`,
+                borderRadius: 6,
+                padding: "8px",
+                fontSize: 12.5,
+                fontWeight: 600,
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
         <label style={fieldLabel}>Categoria</label>
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          style={fieldInput}
-        >
-          <optgroup label="Custos fixos">
-            {CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "fixo").map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </optgroup>
-          <optgroup label="Custos variáveis">
-            {CATEGORY_LIST.filter((c) => CATEGORY_META[c].group === "variavel").map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </optgroup>
+        <select value={category} onChange={(e) => setCategory(e.target.value)} style={fieldInput}>
+          {categoryList.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
         </select>
 
         <label style={fieldLabel}>Valor (R$)</label>
@@ -3443,7 +2907,7 @@ function AddExpenseModal({ onClose, onAdd }) {
         <button
           disabled={!valid}
           onClick={() =>
-            onAdd({ type: "expense", category, amount: Number(amount), date, note: note.trim() })
+            onAdd({ type, category, amount: Number(amount), date, note: note.trim(), source: "manual" })
           }
           style={{
             marginTop: 6,
@@ -3583,6 +3047,11 @@ function AddInvestmentModal({ onClose, onAdd }) {
     </div>
   );
 }
+
+const MONTHS_PT = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
 
 const fieldLabel = {
   display: "block",
