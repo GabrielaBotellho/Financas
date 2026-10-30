@@ -462,6 +462,8 @@ export default function FinancasApp() {
     lsSet(LS_KEYS.recurring, next);
   }, []);
   const addRecurring = (r) => saveRecurring([{ ...r, id: uid() }, ...recurring]);
+  const updateRecurring = (id, patch) =>
+    saveRecurring(recurring.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const deleteRecurring = (id) => saveRecurring(recurring.filter((r) => r.id !== id));
 
   const saveForecasts = useCallback((next) => {
@@ -469,6 +471,8 @@ export default function FinancasApp() {
     lsSet(LS_KEYS.forecasts, next);
   }, []);
   const addForecast = (f) => saveForecasts([{ ...f, id: uid() }, ...forecasts]);
+  const updateForecast = (id, patch) =>
+    saveForecasts(forecasts.map((f) => (f.id === id ? { ...f, ...patch } : f)));
   const deleteForecast = (id) => saveForecasts(forecasts.filter((f) => f.id !== id));
 
   const saveStartingBalance = useCallback((amount) => {
@@ -1012,9 +1016,11 @@ export default function FinancasApp() {
             <PrevistoView
               recurring={recurring}
               onAddRecurring={addRecurring}
+              onUpdateRecurring={updateRecurring}
               onDeleteRecurring={deleteRecurring}
               forecasts={forecasts}
               onAddForecast={addForecast}
+              onUpdateForecast={updateForecast}
               onDeleteForecast={deleteForecast}
               cardAutoForecasts={cardAutoForecasts}
               dismissedCardForecastTransactions={dismissedCardForecastTransactions}
@@ -1525,9 +1531,11 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
 function PrevistoView({
   recurring,
   onAddRecurring,
+  onUpdateRecurring,
   onDeleteRecurring,
   forecasts,
   onAddForecast,
+  onUpdateForecast,
   onDeleteForecast,
   cardAutoForecasts,
   dismissedCardForecastTransactions,
@@ -1554,7 +1562,55 @@ function PrevistoView({
   // pra conferir o cálculo contra o app do banco, lançamento por lançamento.
   const [expandedForecastId, setExpandedForecastId] = useState(null);
 
+  // Qual recorrente/pontual está em edição no momento, e o rascunho sendo
+  // editado — um lançamento previsto pode precisar de ajuste (valor, data,
+  // categoria) conforme o plano muda, sem precisar apagar e recriar.
+  const [editingRecurringId, setEditingRecurringId] = useState(null);
+  const [editRecDraft, setEditRecDraft] = useState(null);
+  const [editingForecastId, setEditingForecastId] = useState(null);
+  const [editFcDraft, setEditFcDraft] = useState(null);
+
   const categoriesFor = (type) => (type === "income" ? INCOME_CATEGORY_LIST : CATEGORY_LIST);
+
+  const startEditRecurring = (r) => {
+    setEditingRecurringId(r.id);
+    setEditRecDraft({ type: r.type, category: r.category, amount: String(r.amount), dayOfMonth: String(r.dayOfMonth), note: r.note || "" });
+  };
+  const cancelEditRecurring = () => {
+    setEditingRecurringId(null);
+    setEditRecDraft(null);
+  };
+  const saveEditRecurring = () => {
+    if (!(Number(editRecDraft.amount) > 0)) return;
+    onUpdateRecurring(editingRecurringId, {
+      type: editRecDraft.type,
+      category: editRecDraft.category,
+      amount: Number(editRecDraft.amount),
+      dayOfMonth: Math.min(31, Math.max(1, Number(editRecDraft.dayOfMonth) || 1)),
+      note: editRecDraft.note.trim(),
+    });
+    cancelEditRecurring();
+  };
+
+  const startEditForecast = (f) => {
+    setEditingForecastId(f.id);
+    setEditFcDraft({ type: f.type, category: f.category, amount: String(f.amount), date: f.date, note: f.note || "" });
+  };
+  const cancelEditForecast = () => {
+    setEditingForecastId(null);
+    setEditFcDraft(null);
+  };
+  const saveEditForecast = () => {
+    if (!(Number(editFcDraft.amount) > 0)) return;
+    onUpdateForecast(editingForecastId, {
+      type: editFcDraft.type,
+      category: editFcDraft.category,
+      amount: Number(editFcDraft.amount),
+      date: editFcDraft.date,
+      note: editFcDraft.note.trim(),
+    });
+    cancelEditForecast();
+  };
 
   const handleAddRecurring = () => {
     if (!(Number(newRecAmount) > 0)) return;
@@ -1621,46 +1677,134 @@ function PrevistoView({
         </div>
       ) : (
         <Card>
-          {sortedRecurring.map((r, i) => (
-            <div
-              key={r.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 14px",
-                borderBottom: i === sortedRecurring.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-              }}
-            >
-              <div style={{ width: 38, textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED }}>
-                dia {r.dayOfMonth}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>
-                  {r.category}
-                  {r.note ? ` · ${r.note}` : ""}
+          {sortedRecurring.map((r, i) => {
+            const isLast = i === sortedRecurring.length - 1;
+            if (editingRecurringId === r.id) {
+              return (
+                <div key={r.id} style={{ padding: "14px", borderBottom: isLast ? "none" : `1px solid ${PAPER_LINE}` }}>
+                  <label style={{ ...fieldLabel, marginTop: 0 }}>Tipo</label>
+                  {typeToggle(editRecDraft.type, (v) =>
+                    setEditRecDraft((d) => ({ ...d, type: v, category: categoriesFor(v)[0] }))
+                  )}
+
+                  <label style={fieldLabel}>Categoria</label>
+                  <select
+                    value={editRecDraft.category}
+                    onChange={(e) => setEditRecDraft((d) => ({ ...d, category: e.target.value }))}
+                    style={fieldInput}
+                  >
+                    {categoriesFor(editRecDraft.type).map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={fieldLabel}>Valor (R$)</label>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        value={editRecDraft.amount}
+                        onChange={(e) => setEditRecDraft((d) => ({ ...d, amount: e.target.value }))}
+                        style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+                      />
+                    </div>
+                    <div style={{ width: 90 }}>
+                      <label style={fieldLabel}>Dia do mês</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        max={31}
+                        value={editRecDraft.dayOfMonth}
+                        onChange={(e) => setEditRecDraft((d) => ({ ...d, dayOfMonth: e.target.value }))}
+                        style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+                      />
+                    </div>
+                  </div>
+
+                  <label style={fieldLabel}>Nota (opcional)</label>
+                  <input
+                    type="text"
+                    value={editRecDraft.note}
+                    onChange={(e) => setEditRecDraft((d) => ({ ...d, note: e.target.value }))}
+                    style={fieldInput}
+                  />
+
+                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                    <button
+                      onClick={cancelEditRecurring}
+                      style={{ flex: 1, background: "#F5F1E5", color: INK, border: `1px solid ${PAPER_LINE}`, borderRadius: 8, padding: "11px", fontSize: 13, fontWeight: 600 }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={saveEditRecurring}
+                      disabled={!(Number(editRecDraft.amount) > 0)}
+                      style={{
+                        flex: 1,
+                        background: Number(editRecDraft.amount) > 0 ? TEAL : PAPER_LINE,
+                        color: Number(editRecDraft.amount) > 0 ? CREAM_TEXT : MUTED,
+                        border: "none",
+                        borderRadius: 8,
+                        padding: "11px",
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
+                      Salvar
+                    </button>
+                  </div>
                 </div>
-              </div>
+              );
+            }
+            return (
               <div
+                key={r.id}
                 style={{
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: r.type === "income" ? TEAL : INK,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: isLast ? "none" : `1px solid ${PAPER_LINE}`,
                 }}
               >
-                {r.type === "income" ? "+ " : "− "}
-                {fmtBRL(r.amount)}
+                <div style={{ width: 38, textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED }}>
+                  dia {r.dayOfMonth}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>
+                    {r.category}
+                    {r.note ? ` · ${r.note}` : ""}
+                  </div>
+                  <button
+                    onClick={() => startEditRecurring(r)}
+                    style={{ background: "none", border: "none", color: TEAL, fontSize: 11, textDecoration: "underline", padding: 0, marginTop: 2 }}
+                  >
+                    editar
+                  </button>
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: r.type === "income" ? TEAL : INK,
+                  }}
+                >
+                  {r.type === "income" ? "+ " : "− "}
+                  {fmtBRL(r.amount)}
+                </div>
+                <button
+                  onClick={() => onDeleteRecurring(r.id)}
+                  aria-label="Excluir recorrente"
+                  style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
-              <button
-                onClick={() => onDeleteRecurring(r.id)}
-                aria-label="Excluir recorrente"
-                style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </Card>
       )}
 
@@ -1742,46 +1886,131 @@ function PrevistoView({
         </div>
       ) : (
         <Card>
-          {sortedForecasts.map((f, i) => (
-            <div
-              key={f.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 14px",
-                borderBottom: i === sortedForecasts.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>
-                  {f.category}
-                  {f.note ? ` · ${f.note}` : ""}
+          {sortedForecasts.map((f, i) => {
+            const isLast = i === sortedForecasts.length - 1;
+            if (editingForecastId === f.id) {
+              return (
+                <div key={f.id} style={{ padding: "14px", borderBottom: isLast ? "none" : `1px solid ${PAPER_LINE}` }}>
+                  <label style={{ ...fieldLabel, marginTop: 0 }}>Tipo</label>
+                  {typeToggle(editFcDraft.type, (v) =>
+                    setEditFcDraft((d) => ({ ...d, type: v, category: categoriesFor(v)[0] }))
+                  )}
+
+                  <label style={fieldLabel}>Categoria</label>
+                  <select
+                    value={editFcDraft.category}
+                    onChange={(e) => setEditFcDraft((d) => ({ ...d, category: e.target.value }))}
+                    style={fieldInput}
+                  >
+                    {categoriesFor(editFcDraft.type).map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={fieldLabel}>Valor (R$)</label>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        value={editFcDraft.amount}
+                        onChange={(e) => setEditFcDraft((d) => ({ ...d, amount: e.target.value }))}
+                        style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+                      />
+                    </div>
+                    <div style={{ width: 130 }}>
+                      <label style={fieldLabel}>Data</label>
+                      <input
+                        type="date"
+                        value={editFcDraft.date}
+                        onChange={(e) => setEditFcDraft((d) => ({ ...d, date: e.target.value }))}
+                        style={fieldInput}
+                      />
+                    </div>
+                  </div>
+
+                  <label style={fieldLabel}>Nota (opcional)</label>
+                  <input
+                    type="text"
+                    value={editFcDraft.note}
+                    onChange={(e) => setEditFcDraft((d) => ({ ...d, note: e.target.value }))}
+                    style={fieldInput}
+                  />
+
+                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                    <button
+                      onClick={cancelEditForecast}
+                      style={{ flex: 1, background: "#F5F1E5", color: INK, border: `1px solid ${PAPER_LINE}`, borderRadius: 8, padding: "11px", fontSize: 13, fontWeight: 600 }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={saveEditForecast}
+                      disabled={!(Number(editFcDraft.amount) > 0)}
+                      style={{
+                        flex: 1,
+                        background: Number(editFcDraft.amount) > 0 ? TEAL : PAPER_LINE,
+                        color: Number(editFcDraft.amount) > 0 ? CREAM_TEXT : MUTED,
+                        border: "none",
+                        borderRadius: 8,
+                        padding: "11px",
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
+                      Salvar
+                    </button>
+                  </div>
                 </div>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
-                  {new Date(f.date + "T00:00:00").toLocaleDateString("pt-BR")}
-                </div>
-              </div>
+              );
+            }
+            return (
               <div
+                key={f.id}
                 style={{
-                  fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: f.type === "income" ? TEAL : INK,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: isLast ? "none" : `1px solid ${PAPER_LINE}`,
                 }}
               >
-                {f.type === "income" ? "+ " : "− "}
-                {fmtBRL(f.amount)}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>
+                    {f.category}
+                    {f.note ? ` · ${f.note}` : ""}
+                  </div>
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                    {new Date(f.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                  </div>
+                  <button
+                    onClick={() => startEditForecast(f)}
+                    style={{ background: "none", border: "none", color: TEAL, fontSize: 11, textDecoration: "underline", padding: 0, marginTop: 2 }}
+                  >
+                    editar
+                  </button>
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: f.type === "income" ? TEAL : INK,
+                  }}
+                >
+                  {f.type === "income" ? "+ " : "− "}
+                  {fmtBRL(f.amount)}
+                </div>
+                <button
+                  onClick={() => onDeleteForecast(f.id)}
+                  aria-label="Excluir lançamento pontual"
+                  style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
-              <button
-                onClick={() => onDeleteForecast(f.id)}
-                aria-label="Excluir lançamento pontual"
-                style={{ background: "none", border: "none", color: MUTED, padding: 4 }}
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </Card>
       )}
 
