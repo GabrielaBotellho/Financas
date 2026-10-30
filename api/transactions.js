@@ -119,6 +119,10 @@ module.exports = async function handler(req, res) {
           amount: Math.abs(tx.amount),
           isExpense,
           accountName: account.name,
+          // Mesmo id de conta usado em api/credit-cards.js — permite ligar
+          // esse lançamento de volta a um cartão específico (ex: pra somar
+          // "quanto já foi categorizado nesse ciclo" por cartão, no front-end).
+          accountId: account.id,
           source: "cartao",
           suggestedCategory: isExpense ? raw.suggestedCategory : null,
           confidence: isExpense ? raw.confidence : "nenhuma",
