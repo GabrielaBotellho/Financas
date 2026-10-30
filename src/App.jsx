@@ -148,6 +148,7 @@ const LS_KEYS = {
   recurring: "caderneta:recurring",
   forecasts: "caderneta:forecasts",
   startingBalance: "caderneta:startingBalance",
+  dismissedCardTransactions: "caderneta:dismissedCardTransactions",
 };
 
 function lsGet(key) {
@@ -332,6 +333,13 @@ export default function FinancasApp() {
   const [startingBalance, setStartingBalance] = useState(
     () => lsGet(LS_KEYS.startingBalance) ?? 0
   );
+  // IDs de lançamentos de cartão (vindos da Pluggy) que a usuária marcou
+  // como "ignorar" na previsão de fatura — ex: quando a Pluggy erra o
+  // número da parcela de um lançamento específico e isso infla uma fatura
+  // futura com algo que já foi cobrado antes.
+  const [dismissedCardTransactions, setDismissedCardTransactions] = useState(
+    () => lsGet(LS_KEYS.dismissedCardTransactions) || []
+  );
 
   // Taxa de juros do rotativo (% ao mês) — a Pluggy não retorna isso, então
   // a usuária informa direto, olhando no app do banco/contrato do cartão.
@@ -465,6 +473,18 @@ export default function FinancasApp() {
     setStartingBalance(amount);
     lsSet(LS_KEYS.startingBalance, amount);
   }, []);
+
+  const saveDismissedCardTransactions = useCallback((next) => {
+    setDismissedCardTransactions(next);
+    lsSet(LS_KEYS.dismissedCardTransactions, next);
+  }, []);
+  const dismissCardTransaction = (id) => {
+    if (dismissedCardTransactions.includes(id)) return;
+    saveDismissedCardTransactions([...dismissedCardTransactions, id]);
+  };
+  const undismissCardTransaction = (id) => {
+    saveDismissedCardTransactions(dismissedCardTransactions.filter((x) => x !== id));
+  };
 
   /* -------------------- rendimentos (aportes/rendimento/resgates) ---- */
   const saveInvestments = useCallback((next) => {
@@ -788,9 +808,10 @@ export default function FinancasApp() {
   // calcula o total das próximas ~6 faturas usando o mesmo motor validado
   // da aba antiga de Cartão (computeCardCycleData), e estima a data de
   // vencimento a partir do histórico real de faturas do próprio cartão.
-  const cardAutoForecasts = useMemo(() => {
+  const [cardAutoForecasts, dismissedCardForecastTransactions] = useMemo(() => {
     const today = todayISO();
     const out = [];
+    const dismissedOut = [];
     creditCards.forEach((card) => {
       const closeDay = cardCloseDays[card.id] || 3;
       const forecastIsUnreliable = !!cardUnreliableForecast[card.id];
@@ -821,13 +842,31 @@ export default function FinancasApp() {
           m -= 12;
           y += 1;
         }
-        const { periodTotal, billTransactions } = computeCardCycleData(card, {
+        const { billTransactions } = computeCardCycleData(card, {
           cursor: { y, m },
           viewMode: "mes",
           closeDay,
           forecastIsUnreliable,
           today,
         });
+        // A Pluggy às vezes erra o número da parcela de um lançamento
+        // específico (ex: diz "3 de 4" quando o banco considera "4 de 4") —
+        // quando a usuária marca um lançamento assim como ignorado, ele some
+        // do total daqui pra frente, em vez de inflar a fatura prevista.
+        const activeTx = billTransactions.filter((tx) => !dismissedCardTransactions.includes(tx.id));
+        billTransactions
+          .filter((tx) => dismissedCardTransactions.includes(tx.id))
+          .forEach((tx) => {
+            if (dismissedOut.some((d) => d.id === tx.id)) return;
+            dismissedOut.push({
+              id: tx.id,
+              description: tx.description || "(sem descrição)",
+              date: tx.date,
+              amount: tx.amount,
+              cardLabel: `${card.name}${card.bankLabel ? " · " + card.bankLabel : ""}`,
+            });
+          });
+        const periodTotal = activeTx.reduce((s, tx) => s + tx.amount, 0);
         if (!periodTotal || periodTotal <= 0) continue;
         const closingDate = new Date(y, m, closeDay);
         const dueDate = new Date(closingDate);
@@ -846,7 +885,7 @@ export default function FinancasApp() {
           // Lançamentos somados nessa fatura — exibidos em Previsto pra dar
           // pra conferir o cálculo contra o app do banco, lançamento por
           // lançamento, sem precisar adivinhar o que entrou ou não.
-          transactions: billTransactions.map((tx) => ({
+          transactions: activeTx.map((tx) => ({
             id: tx.id,
             description: tx.description || "(sem descrição)",
             date: tx.date,
@@ -858,8 +897,8 @@ export default function FinancasApp() {
         });
       }
     });
-    return out;
-  }, [creditCards, cardCloseDays, cardUnreliableForecast]);
+    return [out, dismissedOut];
+  }, [creditCards, cardCloseDays, cardUnreliableForecast, dismissedCardTransactions]);
 
   // Lançamentos marcados como "Desconsiderar" somem de todo cálculo (saldo
   // do Fluxo, total categorizado por cartão) mas continuam visíveis na
@@ -973,6 +1012,9 @@ export default function FinancasApp() {
               onAddForecast={addForecast}
               onDeleteForecast={deleteForecast}
               cardAutoForecasts={cardAutoForecasts}
+              dismissedCardForecastTransactions={dismissedCardForecastTransactions}
+              onDismissCardTransaction={dismissCardTransaction}
+              onUndismissCardTransaction={undismissCardTransaction}
               hasBank={bankItems.length > 0}
               creditCards={creditCards}
               ccStatus={ccStatus}
@@ -1483,6 +1525,9 @@ function PrevistoView({
   onAddForecast,
   onDeleteForecast,
   cardAutoForecasts,
+  dismissedCardForecastTransactions,
+  onDismissCardTransaction,
+  onUndismissCardTransaction,
   hasBank,
   creditCards,
   ccStatus,
@@ -1897,12 +1942,30 @@ function PrevistoView({
                                   {fmtBRL(tx.amount)}
                                 </span>
                               </div>
-                              {tx.totalInstallments > 1 && (
-                                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: BRASS }}>
-                                  parcela {tx.installmentNumber}/{tx.totalInstallments}
-                                  {tx.billId ? ` · billId ${tx.billId}` : " · sem billId"}
-                                </div>
-                              )}
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                                {tx.totalInstallments > 1 ? (
+                                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: BRASS }}>
+                                    parcela {tx.installmentNumber}/{tx.totalInstallments}
+                                    {tx.billId ? ` · billId ${tx.billId}` : " · sem billId"}
+                                  </div>
+                                ) : (
+                                  <span />
+                                )}
+                                <button
+                                  onClick={() => onDismissCardTransaction(tx.id)}
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: CORAL,
+                                    fontSize: 10,
+                                    textDecoration: "underline",
+                                    padding: "2px 0",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  não contar isso
+                                </button>
+                              </div>
                             </div>
                           ))
                         )}
@@ -1917,6 +1980,42 @@ function PrevistoView({
             Esses valores entram automaticamente no Fluxo de Caixa como previsão
             de saída, na data estimada de vencimento.
           </div>
+
+          {dismissedCardForecastTransactions.length > 0 && (
+            <>
+              <SectionLabel style={{ marginTop: 18 }}>
+                Lançamentos ignorados ({dismissedCardForecastTransactions.length})
+              </SectionLabel>
+              <Card>
+                {dismissedCardForecastTransactions.map((tx, i) => (
+                  <div
+                    key={tx.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 14px",
+                      borderBottom: i === dismissedCardForecastTransactions.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                      opacity: 0.6,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5 }}>{tx.description}</div>
+                      <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>
+                        {new Date(tx.date).toLocaleDateString("pt-BR")} · {tx.cardLabel} · {fmtBRL(tx.amount)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onUndismissCardTransaction(tx.id)}
+                      style={{ background: "none", border: "none", color: TEAL, fontSize: 11, textDecoration: "underline", flexShrink: 0 }}
+                    >
+                      voltar a contar
+                    </button>
+                  </div>
+                ))}
+              </Card>
+            </>
+          )}
         </>
       )}
     </div>
