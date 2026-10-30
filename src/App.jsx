@@ -199,6 +199,17 @@ function cashDelta(items, { excludeSource } = {}) {
   }, 0);
 }
 
+// Mesma regra de fechamento de fatura usada em computeCardCycleData, só que
+// solta (sem precisar das transações do cartão) — usada pra agrupar
+// lançamentos do Realizado pelo ciclo de fatura a que pertencem.
+function cycleMonthKeyFor(dateISO, closeDay) {
+  const [y, m, d] = dateISO.slice(0, 10).split("-").map(Number);
+  if (d <= closeDay) return `${y}-${String(m).padStart(2, "0")}`;
+  const dt = new Date(y, m - 1, 1);
+  dt.setMonth(dt.getMonth() + 1);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function dayItemLabel(it) {
   if (it.source === "cartao-auto") return it.note || it.category;
   const base = it.note ? `${it.category} · ${it.note}` : it.category;
@@ -658,6 +669,7 @@ export default function FinancasApp() {
               investType: t.isExpense ? "aporte" : "resgate",
               confidence: t.confidence,
               source: t.source,
+              accountId: t.accountId,
               include: true,
             };
           }
@@ -673,6 +685,7 @@ export default function FinancasApp() {
               : INCOME_CATEGORY_LIST[0],
             confidence: t.confidence,
             source: t.source,
+            accountId: t.accountId,
             // entradas sempre exigem revisão manual, então começam
             // desmarcadas por padrão
             include: t.isExpense ? !!t.suggestedCategory : false,
@@ -706,6 +719,10 @@ export default function FinancasApp() {
         date: c.date,
         note: c.description || "",
         source: c.source || "banco",
+        // Liga o lançamento de volta ao cartão de origem (mesmo id usado em
+        // creditCards) — usado pra somar "quanto já foi categorizado nesse
+        // ciclo" por cartão, no topo do Realizado.
+        accountId: c.accountId || null,
       }));
     if (normalToAdd.length > 0) addManyExpenses(normalToAdd);
 
@@ -818,6 +835,30 @@ export default function FinancasApp() {
     return out;
   }, [creditCards, cardCloseDays, cardUnreliableForecast]);
 
+  // Quanto já foi categorizado (confirmado no Realizado) de cada cartão,
+  // dentro do ciclo de fatura que ainda está em aberto — dá o panorama do
+  // "já categorizei X desse cartão" enquanto a fatura ainda não fechou.
+  const cardCycleTotals = useMemo(() => {
+    const today = todayISO();
+    return creditCards.map((card) => {
+      const closeDay = cardCloseDays[card.id] || 3;
+      const openCycleKey = cycleMonthKeyFor(today, closeDay);
+      const total = expenses
+        .filter(
+          (e) =>
+            e.source === "cartao" &&
+            e.accountId === card.id &&
+            cycleMonthKeyFor(e.date, closeDay) === openCycleKey
+        )
+        .reduce((s, e) => s + (e.type === "income" ? -e.amount : e.amount), 0);
+      return {
+        cardId: card.id,
+        label: `${card.name}${card.bankLabel ? " · " + card.bankLabel : ""}`,
+        total,
+      };
+    });
+  }, [creditCards, cardCloseDays, expenses]);
+
   return (
     <div
       style={{
@@ -885,6 +926,7 @@ export default function FinancasApp() {
               pendingCount={pendingItems.length}
               onReviewPending={reviewPending}
               onDelete={deleteExpense}
+              cardCycleTotals={cardCycleTotals}
             />
           )}
 
@@ -1232,11 +1274,47 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
 /* ------------------------------------------------------------------ */
 /* Realizado view — extrato diário unificado (banco + cartão + manual) */
 /* ------------------------------------------------------------------ */
-function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, onDelete }) {
+function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, onDelete, cardCycleTotals }) {
   const sorted = [...expenses].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   return (
     <div>
+      {cardCycleTotals && cardCycleTotals.length > 0 && (
+        <>
+          <SectionLabel>Cartão · já categorizado neste ciclo</SectionLabel>
+          <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+            {cardCycleTotals.map((c) => (
+              <div
+                key={c.cardId}
+                style={{
+                  flex: 1,
+                  background: "#F5F1E5",
+                  border: `1px solid ${PAPER_LINE}`,
+                  borderLeft: `3px solid ${TEAL}`,
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    color: MUTED,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {c.label}
+                </div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2 }}>
+                  {fmtBRL(c.total)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {pendingCount > 0 && (
         <button
           onClick={onReviewPending}
