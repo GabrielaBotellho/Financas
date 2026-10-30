@@ -851,6 +851,9 @@ export default function FinancasApp() {
             description: tx.description || "(sem descrição)",
             date: tx.date,
             amount: tx.amount,
+            installmentNumber: tx.installmentNumber,
+            totalInstallments: tx.totalInstallments,
+            billId: tx.billId,
           })),
         });
       }
@@ -1882,19 +1885,24 @@ function PrevistoView({
                             <div
                               key={tx.id}
                               style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                gap: 8,
                                 padding: "4px 0",
                                 fontSize: 11.5,
                               }}
                             >
-                              <span style={{ color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {new Date(tx.date).toLocaleDateString("pt-BR")} · {tx.description}
-                              </span>
-                              <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: MUTED, whiteSpace: "nowrap" }}>
-                                {fmtBRL(tx.amount)}
-                              </span>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                                <span style={{ color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {new Date(tx.date).toLocaleDateString("pt-BR")} · {tx.description}
+                                </span>
+                                <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: MUTED, whiteSpace: "nowrap" }}>
+                                  {fmtBRL(tx.amount)}
+                                </span>
+                              </div>
+                              {tx.totalInstallments > 1 && (
+                                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: BRASS }}>
+                                  parcela {tx.installmentNumber}/{tx.totalInstallments}
+                                  {tx.billId ? ` · billId ${tx.billId}` : " · sem billId"}
+                                </div>
+                              )}
                             </div>
                           ))
                         )}
