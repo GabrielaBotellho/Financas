@@ -65,7 +65,12 @@ module.exports = async function handler(req, res) {
       const txs = await fetchTransactions(account.id, { from, to });
       for (const tx of txs) {
         if (isNoiseTransaction(tx)) continue;
-        const isExpense = tx.amount < 0;
+        // Numa compra internacional, `amount` vem na moeda original da
+        // compra (ex: dólar) — `amountInAccountCurrency` é o valor já
+        // convertido pra moeda da conta (real), que é o que realmente vai
+        // ser cobrado. Usa o convertido quando a Pluggy manda.
+        const convertedAmount = tx.amountInAccountCurrency ?? tx.amount;
+        const isExpense = convertedAmount < 0;
         // Sugestão automática de categoria de despesa só vale pra saídas —
         // pra entradas (salário, PIX recebido, etc.) o usuário categoriza na
         // mão, EXCETO no caso específico de "Investimentos": um resgate que
@@ -85,7 +90,7 @@ module.exports = async function handler(req, res) {
           id: tx.id,
           date: tx.date,
           description: tx.description,
-          amount: Math.abs(tx.amount),
+          amount: Math.abs(convertedAmount),
           isExpense,
           accountName: account.name,
           source: "banco",
@@ -107,18 +112,22 @@ module.exports = async function handler(req, res) {
       }
       for (const tx of txs) {
         if (isCardNoiseTransaction(tx)) continue;
+        // Mesma conversão de moeda do extrato bancário acima — compra
+        // internacional no cartão também vem com `amount` em dólar e
+        // `amountInAccountCurrency` já convertido pra real.
+        const convertedAmount = tx.amountInAccountCurrency ?? tx.amount;
         // Na Pluggy, pra conta de cartão de crédito, o sinal é invertido:
         // positivo é compra, negativo é pagamento/estorno — oposto da conta
         // corrente. Pagamento/estorno de fatura já foi filtrado acima por
         // descrição; o que sobrar de valor negativo é estorno de uma compra
         // específica, uma entrada de verdade no Realizado.
-        const isExpense = tx.amount > 0;
+        const isExpense = convertedAmount > 0;
         const raw = suggestCategory(tx);
         all.push({
           id: tx.id,
           date: tx.date,
           description: tx.description,
-          amount: Math.abs(tx.amount),
+          amount: Math.abs(convertedAmount),
           isExpense,
           accountName: account.name,
           // Mesmo id de conta usado em api/credit-cards.js — permite ligar

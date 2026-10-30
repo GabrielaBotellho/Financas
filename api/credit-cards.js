@@ -99,7 +99,11 @@ module.exports = async function handler(req, res) {
             id: tx.id,
             date: tx.date,
             description: tx.description,
-            amount: tx.amount,
+            // Numa compra internacional, `amount` vem na moeda original da
+            // compra (ex: dólar) — `amountInAccountCurrency` é o valor já
+            // convertido pra moeda da conta (real), que é o que realmente
+            // vai ser cobrado. Usa o convertido quando a Pluggy manda.
+            amount: tx.amountInAccountCurrency ?? tx.amount,
             billId: tx.billId || null,
             installmentNumber: tx.creditCardMetadata?.installmentNumber ?? null,
             totalInstallments: tx.creditCardMetadata?.totalInstallments ?? null,
