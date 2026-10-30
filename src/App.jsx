@@ -18,16 +18,16 @@ import {
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
-/* Design tokens — "caderneta" (bank passbook) theme                   */
+/* Design tokens — "minimalista claro" theme                           */
 /* ------------------------------------------------------------------ */
-const INK = "#16231D";
-const PAPER = "#EDE7D8";
-const PAPER_LINE = "#DCD2B7";
-const BRASS = "#B8863E";
-const TEAL = "#3F6B58";
-const CORAL = "#C1503D";
-const MUTED = "#7A705F";
-const CREAM_TEXT = "#EFE9DA";
+const INK = "#16181C";
+const PAPER = "#FFFFFF";
+const PAPER_LINE = "#E6E4DF";
+const BRASS = "#276B58";
+const TEAL = "#276B58";
+const CORAL = "#B3261E";
+const MUTED = "#6B7075";
+const CREAM_TEXT = "#FFFFFF";
 
 // Categoria especial e fixa (não editável/apagável) pra marcar um
 // lançamento do Realizado como "não é de verdade" — ex: duplicata de um
@@ -242,27 +242,11 @@ function dayItemLabel(it) {
 /* ------------------------------------------------------------------ */
 /* Small building blocks                                               */
 /* ------------------------------------------------------------------ */
-function Perforation({ bg = PAPER, dot = INK }) {
-  return (
-    <div
-      style={{
-        height: 12,
-        width: "100%",
-        backgroundImage: `radial-gradient(circle, ${bg} 2.6px, transparent 3px)`,
-        backgroundSize: "14px 12px",
-        backgroundPosition: "center",
-        backgroundColor: dot,
-        backgroundRepeat: "repeat-x",
-      }}
-    />
-  );
-}
-
 function Card({ children }) {
   return (
     <div
       style={{
-        background: "#F5F1E5",
+        background: "#F6F6F4",
         border: `1px solid ${PAPER_LINE}`,
         borderRadius: 10,
         overflow: "hidden",
@@ -277,7 +261,7 @@ function SectionLabel({ children, style }) {
   return (
     <div
       style={{
-        fontFamily: "'IBM Plex Mono', monospace",
+        fontFamily: "'Inter', sans-serif",
         fontSize: 11,
         letterSpacing: 1,
         textTransform: "uppercase",
@@ -976,19 +960,19 @@ export default function FinancasApp() {
       style={{
         minHeight: "100vh",
         background: PAPER,
-        fontFamily: "'IBM Plex Sans', sans-serif",
+        fontFamily: "'Inter', sans-serif",
         color: INK,
         display: "flex",
         justifyContent: "center",
       }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,680&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body { margin: 0; }
+        body { margin: 0; font-variant-numeric: tabular-nums; }
         button { font-family: inherit; cursor: pointer; }
         input, select { font-family: inherit; }
-        ::selection { background: ${BRASS}; color: ${INK}; }
+        ::selection { background: ${BRASS}; color: #FFFFFF; }
         @media (prefers-reduced-motion: reduce) {
           * { transition: none !important; animation: none !important; }
         }
@@ -996,23 +980,22 @@ export default function FinancasApp() {
 
       <div style={{ width: "100%", maxWidth: 430, minHeight: "100vh", display: "flex", flexDirection: "column", position: "relative" }}>
         {/* ---------------- COVER ---------------- */}
-        <div style={{ background: INK, color: CREAM_TEXT, padding: "28px 20px 22px" }}>
+        <div style={{ background: PAPER, color: INK, padding: "28px 20px 22px", borderBottom: `1px solid ${PAPER_LINE}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Wallet size={16} color={BRASS} />
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1.5, color: BRASS, textTransform: "uppercase" }}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, letterSpacing: 1.5, color: BRASS, textTransform: "uppercase" }}>
               Caderneta
             </span>
           </div>
-          <div style={{ marginTop: 14, fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 20 }}>
+          <div style={{ marginTop: 14, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 20 }}>
             {TAB_TITLES[tab]}
           </div>
         </div>
-        <Perforation bg={PAPER} dot={INK} />
 
         {/* ---------------- CONTENT ---------------- */}
         <div style={{ flex: 1, padding: "18px 16px 100px" }}>
           {error && (
-            <div style={{ background: "#F3D9D3", color: CORAL, fontSize: 12, padding: "8px 10px", borderRadius: 6, marginBottom: 14, display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ background: "#FBEAE8", color: CORAL, fontSize: 12, padding: "8px 10px", borderRadius: 6, marginBottom: 14, display: "flex", justifyContent: "space-between", gap: 8 }}>
               <span>{error}</span>
               <button onClick={() => setError("")} style={{ background: "none", border: "none", color: CORAL }}>
                 <X size={14} />
@@ -1135,7 +1118,8 @@ export default function FinancasApp() {
             transform: "translateX(-50%)",
             width: "100%",
             maxWidth: 430,
-            background: INK,
+            background: PAPER,
+            borderTop: `1px solid ${PAPER_LINE}`,
             display: "flex",
             justifyContent: "space-around",
             padding: "10px 0 max(10px, env(safe-area-inset-bottom))",
@@ -1158,9 +1142,9 @@ export default function FinancasApp() {
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 3,
-                color: tab === id ? BRASS : "rgba(239,233,218,0.5)",
+                color: tab === id ? BRASS : "#ADB1B6",
                 fontSize: 10,
-                fontFamily: "'IBM Plex Mono', monospace",
+                fontFamily: "'Inter', sans-serif",
                 letterSpacing: 0.5,
               }}
             >
@@ -1288,7 +1272,7 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
             onChange={(e) => setLocalBalance(e.target.value)}
             onBlur={handleSaveBalance}
             placeholder="0,00"
-            style={{ ...fieldInput, margin: 0, fontFamily: "'IBM Plex Mono', monospace", fontSize: 18 }}
+            style={{ ...fieldInput, margin: 0, fontFamily: "'Inter', sans-serif", fontSize: 18 }}
           />
         </div>
         <div style={{ fontSize: 11, color: MUTED, padding: "0 14px 12px" }}>
@@ -1319,7 +1303,7 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
                 padding: "6px 14px",
                 fontSize: 11.5,
                 color: MUTED,
-                fontFamily: "'IBM Plex Mono', monospace",
+                fontFamily: "'Inter', sans-serif",
               }}
             >
               <span>{formatDayLabel(d)}</span>
@@ -1337,7 +1321,7 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
                   justifyContent: "space-between",
                   alignItems: "center",
                   padding: "10px 14px",
-                  background: isToday ? "#F3E7CE" : "#F5F1E5",
+                  background: isToday ? "#EAF4EF" : "#F6F6F4",
                   borderBottom: hasItems ? `1px solid ${PAPER_LINE}` : "none",
                 }}
               >
@@ -1348,7 +1332,7 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
                 </span>
                 <span
                   style={{
-                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     fontWeight: 600,
                     color: balance >= 0 ? TEAL : CORAL,
@@ -1372,7 +1356,7 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
                   <span style={{ fontSize: 12.5 }}>{dayItemLabel(it)}</span>
                   <span
                     style={{
-                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontFamily: "'Inter', sans-serif",
                       fontSize: 12.5,
                       fontWeight: 600,
                       color: it.type === "income" ? TEAL : INK,
@@ -1409,7 +1393,7 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
                 key={c.cardId}
                 style={{
                   flex: 1,
-                  background: "#F5F1E5",
+                  background: "#F6F6F4",
                   border: `1px solid ${PAPER_LINE}`,
                   borderLeft: `3px solid ${TEAL}`,
                   borderRadius: 8,
@@ -1419,7 +1403,7 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
                 <div
                   style={{
                     fontSize: 10.5,
-                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontFamily: "'Inter', sans-serif",
                     color: MUTED,
                     textTransform: "uppercase",
                     letterSpacing: 0.5,
@@ -1427,7 +1411,7 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
                 >
                   {c.label}
                 </div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17, marginTop: 2 }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 17, marginTop: 2 }}>
                   {fmtBRL(c.total)}
                 </div>
               </div>
@@ -1445,7 +1429,7 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
             alignItems: "center",
             justifyContent: "space-between",
             gap: 10,
-            background: "#F3E7CE",
+            background: "#EAF4EF",
             border: `1px solid ${BRASS}`,
             borderRadius: 8,
             padding: "12px 14px",
@@ -1496,7 +1480,7 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
                     <span
                       style={{
                         marginLeft: 6,
-                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontFamily: "'Inter', sans-serif",
                         fontSize: 9.5,
                         textTransform: "uppercase",
                         letterSpacing: 0.5,
@@ -1513,7 +1497,7 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
                     <span
                       style={{
                         marginLeft: 6,
-                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontFamily: "'Inter', sans-serif",
                         fontSize: 9.5,
                         textTransform: "uppercase",
                         letterSpacing: 0.5,
@@ -1527,14 +1511,14 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
                     </span>
                   )}
                 </div>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>
                   {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")} · {weekdayAbbrev(e.date)}
                   {e.note ? ` · ${e.note}` : ""}
                 </div>
               </div>
               <div
                 style={{
-                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontFamily: "'Inter', sans-serif",
                   fontSize: 13.5,
                   fontWeight: 600,
                   color: e.type === "income" ? TEAL : INK,
@@ -1697,7 +1681,7 @@ function PrevistoView({
           onClick={() => onChange(opt.id)}
           style={{
             flex: 1,
-            background: value === opt.id ? INK : "#F5F1E5",
+            background: value === opt.id ? INK : "#F6F6F4",
             color: value === opt.id ? CREAM_TEXT : INK,
             border: `1px solid ${value === opt.id ? INK : PAPER_LINE}`,
             borderRadius: 6,
@@ -1751,7 +1735,7 @@ function PrevistoView({
                         inputMode="decimal"
                         value={editRecDraft.amount}
                         onChange={(e) => setEditRecDraft((d) => ({ ...d, amount: e.target.value }))}
-                        style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+                        style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
                       />
                     </div>
                     <div style={{ width: 90 }}>
@@ -1763,7 +1747,7 @@ function PrevistoView({
                         max={31}
                         value={editRecDraft.dayOfMonth}
                         onChange={(e) => setEditRecDraft((d) => ({ ...d, dayOfMonth: e.target.value }))}
-                        style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+                        style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
                       />
                     </div>
                   </div>
@@ -1787,7 +1771,7 @@ function PrevistoView({
                   <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                     <button
                       onClick={cancelEditRecurring}
-                      style={{ flex: 1, background: "#F5F1E5", color: INK, border: `1px solid ${PAPER_LINE}`, borderRadius: 8, padding: "11px", fontSize: 13, fontWeight: 600 }}
+                      style={{ flex: 1, background: "#F6F6F4", color: INK, border: `1px solid ${PAPER_LINE}`, borderRadius: 8, padding: "11px", fontSize: 13, fontWeight: 600 }}
                     >
                       Cancelar
                     </button>
@@ -1822,7 +1806,7 @@ function PrevistoView({
                   borderBottom: isLast ? "none" : `1px solid ${PAPER_LINE}`,
                 }}
               >
-                <div style={{ width: 38, textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED }}>
+                <div style={{ width: 38, textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 11, color: MUTED }}>
                   dia {r.dayOfMonth}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -1831,7 +1815,7 @@ function PrevistoView({
                     {r.note ? ` · ${r.note}` : ""}
                   </div>
                   {r.startDate && (
-                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: BRASS, marginTop: 1 }}>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: BRASS, marginTop: 1 }}>
                       a partir de {new Date(r.startDate + "T00:00:00").toLocaleDateString("pt-BR")}
                     </div>
                   )}
@@ -1844,7 +1828,7 @@ function PrevistoView({
                 </div>
                 <div
                   style={{
-                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     fontWeight: 600,
                     color: r.type === "income" ? TEAL : INK,
@@ -1890,7 +1874,7 @@ function PrevistoView({
                 value={newRecAmount}
                 onChange={(e) => setNewRecAmount(e.target.value)}
                 placeholder="0,00"
-                style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+                style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
               />
             </div>
             <div style={{ width: 90 }}>
@@ -1902,7 +1886,7 @@ function PrevistoView({
                 max={31}
                 value={newRecDay}
                 onChange={(e) => setNewRecDay(e.target.value)}
-                style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+                style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
               />
             </div>
           </div>
@@ -1986,7 +1970,7 @@ function PrevistoView({
                         inputMode="decimal"
                         value={editFcDraft.amount}
                         onChange={(e) => setEditFcDraft((d) => ({ ...d, amount: e.target.value }))}
-                        style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+                        style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
                       />
                     </div>
                     <div style={{ width: 130 }}>
@@ -2011,7 +1995,7 @@ function PrevistoView({
                   <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                     <button
                       onClick={cancelEditForecast}
-                      style={{ flex: 1, background: "#F5F1E5", color: INK, border: `1px solid ${PAPER_LINE}`, borderRadius: 8, padding: "11px", fontSize: 13, fontWeight: 600 }}
+                      style={{ flex: 1, background: "#F6F6F4", color: INK, border: `1px solid ${PAPER_LINE}`, borderRadius: 8, padding: "11px", fontSize: 13, fontWeight: 600 }}
                     >
                       Cancelar
                     </button>
@@ -2051,7 +2035,7 @@ function PrevistoView({
                     {f.category}
                     {f.note ? ` · ${f.note}` : ""}
                   </div>
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>
                     {new Date(f.date + "T00:00:00").toLocaleDateString("pt-BR")}
                   </div>
                   <button
@@ -2063,7 +2047,7 @@ function PrevistoView({
                 </div>
                 <div
                   style={{
-                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     fontWeight: 600,
                     color: f.type === "income" ? TEAL : INK,
@@ -2109,7 +2093,7 @@ function PrevistoView({
                 value={newFcAmount}
                 onChange={(e) => setNewFcAmount(e.target.value)}
                 placeholder="0,00"
-                style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
+                style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
               />
             </div>
             <div style={{ width: 130 }}>
@@ -2171,7 +2155,7 @@ function PrevistoView({
             style={{
               width: "100%",
               marginTop: 10,
-              background: creditCards.length > 0 ? "#F5F1E5" : TEAL,
+              background: creditCards.length > 0 ? "#F6F6F4" : TEAL,
               color: creditCards.length > 0 ? INK : CREAM_TEXT,
               border: creditCards.length > 0 ? `1px solid ${PAPER_LINE}` : "none",
               borderRadius: 8,
@@ -2222,7 +2206,7 @@ function PrevistoView({
                           </span>
                         </div>
                       </div>
-                      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600 }}>
                         {fmtBRL(f.amount)}
                       </div>
                     </button>
@@ -2243,13 +2227,13 @@ function PrevistoView({
                                 <span style={{ color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                   {new Date(tx.date).toLocaleDateString("pt-BR")} · {tx.description}
                                 </span>
-                                <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: MUTED, whiteSpace: "nowrap" }}>
+                                <span style={{ fontFamily: "'Inter', sans-serif", color: MUTED, whiteSpace: "nowrap" }}>
                                   {fmtBRL(tx.amount)}
                                 </span>
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                                 {tx.totalInstallments > 1 ? (
-                                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: BRASS }}>
+                                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, color: BRASS }}>
                                     parcela {tx.installmentNumber}/{tx.totalInstallments}
                                     {tx.billId ? ` · billId ${tx.billId}` : " · sem billId"}
                                   </div>
@@ -2338,7 +2322,7 @@ function InvestmentsView({ aportes, rendimento, resgates, accumulated, entries, 
       <SectionLabel>Acumulado</SectionLabel>
       <Card>
         <div style={{ padding: "16px 14px", textAlign: "center" }}>
-          <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 680, fontSize: 32 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 680, fontSize: 32 }}>
             {fmtBRL(accumulated)}
           </div>
           <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>
@@ -2382,12 +2366,12 @@ function InvestmentsView({ aportes, rendimento, resgates, accumulated, entries, 
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 500 }}>{meta.label}</div>
-                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>
                     {new Date(inv.date + "T00:00:00").toLocaleDateString("pt-BR")}
                     {inv.note ? ` · ${inv.note}` : ""}
                   </div>
                 </div>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13.5, fontWeight: 600, color: meta.color }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: 600, color: meta.color }}>
                   {sign}
                   {fmtBRL(inv.amount)}
                 </div>
@@ -2412,7 +2396,7 @@ function InvestSummaryCard({ label, value, meta }) {
     <div
       style={{
         flex: 1,
-        background: "#F5F1E5",
+        background: "#F6F6F4",
         border: `1px solid ${PAPER_LINE}`,
         borderLeft: `3px solid ${meta.color}`,
         borderRadius: 8,
@@ -2420,10 +2404,10 @@ function InvestSummaryCard({ label, value, meta }) {
       }}
     >
       <div style={{ fontSize: 15, color: meta.color, marginBottom: 4 }}>{meta.icon}</div>
-      <div style={{ fontSize: 10.5, fontFamily: "'IBM Plex Mono', monospace", color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
+      <div style={{ fontSize: 10.5, fontFamily: "'Inter', sans-serif", color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 }}>
         {label}
       </div>
-      <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 15.5, marginTop: 2 }}>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15.5, marginTop: 2 }}>
         {fmtBRL(value)}
       </div>
     </div>
@@ -2718,7 +2702,7 @@ function ConfigView({
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    background: "#F5F1E5",
+                    background: "#F6F6F4",
                     border: `1px solid ${PAPER_LINE}`,
                     borderRadius: 6,
                     padding: "8px 10px",
@@ -2748,7 +2732,7 @@ function ConfigView({
                     </span>
                     <span
                       style={{
-                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontFamily: "'Inter', sans-serif",
                         fontSize: 10.5,
                         color: MUTED,
                         overflow: "hidden",
@@ -2806,7 +2790,7 @@ function ConfigView({
               alignItems: "center",
               justifyContent: "center",
               gap: 8,
-              background: bankItems.length > 0 ? "#F5F1E5" : TEAL,
+              background: bankItems.length > 0 ? "#F6F6F4" : TEAL,
               color: bankItems.length > 0 ? INK : CREAM_TEXT,
               border: bankItems.length > 0 ? `1px solid ${PAPER_LINE}` : "none",
               borderRadius: 8,
@@ -2866,7 +2850,7 @@ function ConfigView({
               border: `1px solid ${PAPER_LINE}`,
               borderRadius: 6,
               padding: "8px 10px",
-              fontFamily: "'IBM Plex Mono', monospace",
+              fontFamily: "'Inter', sans-serif",
               fontSize: 14,
               background: PAPER,
             }}
@@ -2917,7 +2901,7 @@ function ConfigView({
                     border: `1px solid ${PAPER_LINE}`,
                     borderRadius: 6,
                     padding: "6px 8px",
-                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     textAlign: "right",
                     background: PAPER,
@@ -3002,7 +2986,7 @@ function ConfigView({
                     border: `1px solid ${PAPER_LINE}`,
                     borderRadius: 6,
                     padding: "6px 8px",
-                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     textAlign: "right",
                     background: PAPER,
@@ -3037,7 +3021,7 @@ function ConfigView({
                 onClick={() => setNewCatKind(opt.id)}
                 style={{
                   flex: 1,
-                  background: newCatKind === opt.id ? INK : "#F5F1E5",
+                  background: newCatKind === opt.id ? INK : "#F6F6F4",
                   color: newCatKind === opt.id ? CREAM_TEXT : INK,
                   border: `1px solid ${newCatKind === opt.id ? INK : PAPER_LINE}`,
                   borderRadius: 6,
@@ -3203,7 +3187,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(22,35,29,0.55)",
+        background: "rgba(22,24,28,0.55)",
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "center",
@@ -3222,7 +3206,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 18px 10px" }}>
-          <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 17 }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 17 }}>
             Revisar importação
           </span>
           <button onClick={onCancel} style={{ background: "none", border: "none", color: MUTED }}>
@@ -3255,7 +3239,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                 style={{
                   flexShrink: 0,
                   whiteSpace: "nowrap",
-                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontFamily: "'Inter', sans-serif",
                   fontSize: 11,
                   textTransform: "uppercase",
                   letterSpacing: 0.4,
@@ -3318,7 +3302,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                       <span
                         style={{
                           marginLeft: 6,
-                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontFamily: "'Inter', sans-serif",
                           fontSize: 9.5,
                           textTransform: "uppercase",
                           letterSpacing: 0.5,
@@ -3335,7 +3319,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                       <span
                         style={{
                           marginLeft: 6,
-                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontFamily: "'Inter', sans-serif",
                           fontSize: 9.5,
                           textTransform: "uppercase",
                           letterSpacing: 0.5,
@@ -3352,7 +3336,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                       <span
                         style={{
                           marginLeft: 6,
-                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontFamily: "'Inter', sans-serif",
                           fontSize: 9.5,
                           textTransform: "uppercase",
                           letterSpacing: 0.5,
@@ -3368,7 +3352,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                   </span>
                   <span
                     style={{
-                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontFamily: "'Inter', sans-serif",
                       fontSize: 13,
                       fontWeight: 600,
                       whiteSpace: "nowrap",
@@ -3379,7 +3363,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                     {fmtBRL(c.amount)}
                   </span>
                 </div>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: MUTED, marginTop: 2 }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: MUTED, marginTop: 2 }}>
                   {new Date(c.date + "T00:00:00").toLocaleDateString("pt-BR")} · {weekdayAbbrev(c.date)}
                   {c.accountName ? ` · ${c.accountName}` : ""}
                   {c.confidence && c.confidence !== "nenhuma" ? ` · confiança ${c.confidence}` : ""}
@@ -3396,7 +3380,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                       borderRadius: 6,
                       padding: "6px 8px",
                       fontSize: 12.5,
-                      background: "#F5F1E5",
+                      background: "#F6F6F4",
                       color: INK,
                     }}
                   >
@@ -3416,7 +3400,7 @@ function ImportReviewModal({ candidates, onCancel, onConfirm }) {
                       borderRadius: 6,
                       padding: "6px 8px",
                       fontSize: 12.5,
-                      background: "#F5F1E5",
+                      background: "#F6F6F4",
                       color: INK,
                     }}
                   >
@@ -3475,7 +3459,7 @@ function AddExpenseModal({ onClose, onAdd }) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(22,35,29,0.55)",
+        background: "rgba(22,24,28,0.55)",
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "center",
@@ -3494,7 +3478,7 @@ function AddExpenseModal({ onClose, onAdd }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 18 }}>Novo lançamento</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 18 }}>Novo lançamento</span>
           <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED }}>
             <X size={20} />
           </button>
@@ -3508,7 +3492,7 @@ function AddExpenseModal({ onClose, onAdd }) {
               onClick={() => setType(opt.id)}
               style={{
                 flex: 1,
-                background: type === opt.id ? INK : "#F5F1E5",
+                background: type === opt.id ? INK : "#F6F6F4",
                 color: type === opt.id ? CREAM_TEXT : INK,
                 border: `1px solid ${type === opt.id ? INK : PAPER_LINE}`,
                 borderRadius: 6,
@@ -3537,7 +3521,7 @@ function AddExpenseModal({ onClose, onAdd }) {
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="0,00"
-          style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace", fontSize: 18 }}
+          style={{ ...fieldInput, fontFamily: "'Inter', sans-serif", fontSize: 18 }}
         />
 
         <label style={fieldLabel}>Data</label>
@@ -3596,7 +3580,7 @@ function AddInvestmentModal({ onClose, onAdd }) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(22,35,29,0.55)",
+        background: "rgba(22,24,28,0.55)",
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "center",
@@ -3615,7 +3599,7 @@ function AddInvestmentModal({ onClose, onAdd }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 18 }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 18 }}>
             Novo lançamento
           </span>
           <button onClick={onClose} style={{ background: "none", border: "none", color: MUTED }}>
@@ -3634,7 +3618,7 @@ function AddInvestmentModal({ onClose, onAdd }) {
                 onClick={() => setType(t)}
                 style={{
                   flex: 1,
-                  background: active ? meta.color : "#F5F1E5",
+                  background: active ? meta.color : "#F6F6F4",
                   color: active ? CREAM_TEXT : INK,
                   border: `1px solid ${active ? meta.color : PAPER_LINE}`,
                   borderRadius: 6,
@@ -3657,7 +3641,7 @@ function AddInvestmentModal({ onClose, onAdd }) {
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="0,00"
-          style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace", fontSize: 18 }}
+          style={{ ...fieldInput, fontFamily: "'Inter', sans-serif", fontSize: 18 }}
         />
 
         <label style={fieldLabel}>Data</label>
@@ -3708,7 +3692,7 @@ const MONTHS_PT = [
 
 const fieldLabel = {
   display: "block",
-  fontFamily: "'IBM Plex Mono', monospace",
+  fontFamily: "'Inter', sans-serif",
   fontSize: 10.5,
   letterSpacing: 0.8,
   textTransform: "uppercase",
@@ -3723,6 +3707,6 @@ const fieldInput = {
   borderRadius: 8,
   padding: "10px 12px",
   fontSize: 14,
-  background: "#F5F1E5",
+  background: "#F6F6F4",
   color: INK,
 };
