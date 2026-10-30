@@ -145,6 +145,7 @@ const LS_KEYS = {
   rotativoRate: "caderneta:rotativoRate",
   cardCloseDays: "caderneta:cardCloseDays",
   cardUnreliableForecast: "caderneta:cardUnreliableForecast",
+  cardPaymentDay: "caderneta:cardPaymentDay",
   recurring: "caderneta:recurring",
   forecasts: "caderneta:forecasts",
   startingBalance: "caderneta:startingBalance",
@@ -355,6 +356,14 @@ export default function FinancasApp() {
   const [cardUnreliableForecast, setCardUnreliableForecast] = useState(
     () => lsGet(LS_KEYS.cardUnreliableForecast) || {}
   );
+  // Dia do mês em que a usuária costuma de fato pagar a fatura desse
+  // cartão (ex: assim que recebe o salário) — quando configurado, a
+  // previsão no Fluxo usa esse dia em vez do vencimento real calculado,
+  // já que o que importa pro fluxo de caixa é quando o dinheiro sai de
+  // verdade, não a data limite do banco.
+  const [cardPaymentDay, setCardPaymentDay] = useState(
+    () => lsGet(LS_KEYS.cardPaymentDay) || {}
+  );
   // O widget "Meu Pluggy" só deixa escolher UM banco por vez — então cada
   // banco vira uma conexão própria, com seu próprio itemId. Migra o antigo
   // bankItemId (valor único) pra essa lista, se existir.
@@ -407,6 +416,13 @@ export default function FinancasApp() {
     setCardUnreliableForecast(nextMap);
     if (!lsSet(LS_KEYS.cardUnreliableForecast, nextMap)) {
       setError("Não consegui salvar a configuração de previsão de parcelas.");
+    }
+  }, []);
+
+  const saveCardPaymentDay = useCallback((nextMap) => {
+    setCardPaymentDay(nextMap);
+    if (!lsSet(LS_KEYS.cardPaymentDay, nextMap)) {
+      setError("Não consegui salvar o dia de pagamento da fatura.");
     }
   }, []);
 
@@ -821,6 +837,7 @@ export default function FinancasApp() {
     creditCards.forEach((card) => {
       const closeDay = cardCloseDays[card.id] || 3;
       const forecastIsUnreliable = !!cardUnreliableForecast[card.id];
+      const paymentDay = Number(cardPaymentDay[card.id]) || null;
       const bills = card.bills || [];
       const offsets = bills
         .filter((b) => b.billClosingDate && b.dueDate)
@@ -877,9 +894,18 @@ export default function FinancasApp() {
           });
         const periodTotal = activeTx.reduce((s, tx) => s + tx.amount, 0);
         if (!periodTotal || periodTotal <= 0) continue;
-        const closingDate = new Date(y, m, closeDay);
-        const dueDate = new Date(closingDate);
-        dueDate.setDate(dueDate.getDate() + dueDayOffset);
+        // Se a usuária configurou o dia em que costuma de fato pagar essa
+        // fatura (ex: assim que recebe o salário, antes do vencimento
+        // real), usa esse dia — o que importa pro Fluxo é quando o
+        // dinheiro sai de verdade, não a data limite do banco.
+        const dueDate = paymentDay
+          ? new Date(y, m, Math.min(paymentDay, 28))
+          : (() => {
+              const closingDate = new Date(y, m, closeDay);
+              const d = new Date(closingDate);
+              d.setDate(d.getDate() + dueDayOffset);
+              return d;
+            })();
         const dueDateISO = dueDate.toISOString().slice(0, 10);
         if (dueDateISO <= today) continue;
         out.push({
@@ -907,7 +933,7 @@ export default function FinancasApp() {
       }
     });
     return [out, dismissedOut];
-  }, [creditCards, cardCloseDays, cardUnreliableForecast, dismissedCardTransactions]);
+  }, [creditCards, cardCloseDays, cardUnreliableForecast, cardPaymentDay, dismissedCardTransactions]);
 
   // Lançamentos marcados como "Desconsiderar" somem de todo cálculo (saldo
   // do Fluxo, total categorizado por cartão) mas continuam visíveis na
@@ -1053,6 +1079,8 @@ export default function FinancasApp() {
               onSaveCardCloseDays={saveCardCloseDays}
               cardUnreliableForecast={cardUnreliableForecast}
               onSaveCardUnreliableForecast={saveCardUnreliableForecast}
+              cardPaymentDay={cardPaymentDay}
+              onSaveCardPaymentDay={saveCardPaymentDay}
               bankItems={bankItems}
               itemStatuses={itemStatuses}
               bankStatus={bankStatus}
@@ -2530,6 +2558,8 @@ function ConfigView({
   onSaveCardCloseDays,
   cardUnreliableForecast,
   onSaveCardUnreliableForecast,
+  cardPaymentDay,
+  onSaveCardPaymentDay,
   bankItems,
   itemStatuses,
   bankStatus,
@@ -2546,6 +2576,7 @@ function ConfigView({
   const [localCardUnreliableForecast, setLocalCardUnreliableForecast] = useState(
     cardUnreliableForecast || {}
   );
+  const [localCardPaymentDay, setLocalCardPaymentDay] = useState(cardPaymentDay || {});
   const [saved, setSaved] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatKind, setNewCatKind] = useState("expense");
@@ -2576,6 +2607,12 @@ function ConfigView({
     });
     onSaveCardCloseDays(cleanedCloseDays);
     onSaveCardUnreliableForecast(localCardUnreliableForecast);
+    const cleanedPaymentDay = {};
+    Object.keys(localCardPaymentDay).forEach((id) => {
+      const v = Number(localCardPaymentDay[id]);
+      if (v > 0) cleanedPaymentDay[id] = v;
+    });
+    onSaveCardPaymentDay(cleanedPaymentDay);
     setSaved(true);
     setTimeout(() => setSaved(false), 1600);
   };
@@ -2879,6 +2916,56 @@ function ConfigView({
                   {c.bankLabel ? ` · ${c.bankLabel}` : ""}
                 </span>
               </label>
+            ))}
+          </Card>
+
+          <SectionLabel style={{ marginTop: 22 }}>Dia que você costuma pagar (opcional)</SectionLabel>
+          <Card>
+            <div style={{ fontSize: 11, color: MUTED, padding: "10px 14px 4px" }}>
+              Se você paga a fatura antes do vencimento (ex: assim que recebe o
+              salário), preenche aqui o dia em que isso costuma acontecer — o
+              Fluxo de Caixa passa a prever a saída nesse dia em vez do
+              vencimento real do banco. Deixe em branco pra usar o vencimento
+              calculado normalmente.
+            </div>
+            {creditCards.map((c, i) => (
+              <div
+                key={c.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: i === creditCards.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                }}
+              >
+                <span style={{ fontSize: 13, flex: 1 }}>
+                  {c.name}
+                  {c.bankLabel ? ` · ${c.bankLabel}` : ""}
+                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={28}
+                  placeholder="vencimento"
+                  value={localCardPaymentDay[c.id] ?? ""}
+                  onChange={(e) =>
+                    setLocalCardPaymentDay((m) => ({ ...m, [c.id]: e.target.value }))
+                  }
+                  style={{
+                    width: 90,
+                    border: `1px solid ${PAPER_LINE}`,
+                    borderRadius: 6,
+                    padding: "6px 8px",
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: 13,
+                    textAlign: "right",
+                    background: PAPER,
+                  }}
+                />
+              </div>
             ))}
           </Card>
         </>
