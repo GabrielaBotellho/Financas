@@ -178,6 +178,11 @@ function formatDayLabel(dateISO) {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} · ${WEEKDAYS_PT[d.getDay()]}`;
 }
 
+function weekdayAbbrev(dateISO) {
+  const d = new Date(dateISO + "T00:00:00");
+  return WEEKDAYS_PT[d.getDay()];
+}
+
 // Uma regra recorrente vale no dia D de cada mês — em meses mais curtos que
 // D (ex: regra no dia 31, mês de fevereiro), cai no último dia do mês.
 function isRecurringDue(rule, dateISO) {
@@ -1389,7 +1394,7 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
                   )}
                 </div>
                 <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: MUTED, marginTop: 2 }}>
-                  {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                  {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR")} · {weekdayAbbrev(e.date)}
                   {e.note ? ` · ${e.note}` : ""}
                 </div>
               </div>
