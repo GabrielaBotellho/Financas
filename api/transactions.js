@@ -33,6 +33,7 @@ const CARD_NOISE_PATTERNS = [
   /juros de divida encerrada|juros de dívida encerrada/i,
   /encerramento de divida|encerramento de dívida/i,
   /pagamento recebido/i,
+  /pagamento com saldo/i,
   /devolucao saldo credor|devolução saldo credor/i,
 ];
 const isCardNoiseTransaction = (tx) =>
