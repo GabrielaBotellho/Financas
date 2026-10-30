@@ -29,11 +29,20 @@ const CORAL = "#C1503D";
 const MUTED = "#7A705F";
 const CREAM_TEXT = "#EFE9DA";
 
+// Categoria especial e fixa (não editável/apagável) pra marcar um
+// lançamento do Realizado como "não é de verdade" — ex: duplicata de um
+// parcelamento que a Pluggy reportou errado. Continua visível no Realizado
+// pra manter o registro, mas é ignorado em todo cálculo de saldo/total das
+// outras abas. É pré-cadastrada (em vez de pedir pra usuária criar) pra
+// nunca depender de digitar o nome certinho.
+const DISREGARD_CATEGORY = "Desconsiderar";
+
 // CATEGORY_META/INCOME_META mapeiam categoria -> ícone (string). Começam só
 // com as categorias fixas do app, mas são recalculadas (rebuildCategories)
 // sempre que uma categoria personalizada é adicionada/removida — por isso
 // são `let`, não `const`.
 const BASE_CATEGORY_META = {
+  [DISREGARD_CATEGORY]: "⊘",
   "Assinaturas": "♫",
   "Transporte - Carona": "→",
   "Transporte - Ônibus": "▭",
@@ -840,6 +849,14 @@ export default function FinancasApp() {
     return out;
   }, [creditCards, cardCloseDays, cardUnreliableForecast]);
 
+  // Lançamentos marcados como "Desconsiderar" somem de todo cálculo (saldo
+  // do Fluxo, total categorizado por cartão) mas continuam visíveis na
+  // lista do Realizado, pra manter o registro de por que foram ignorados.
+  const activeExpenses = useMemo(
+    () => expenses.filter((e) => e.category !== DISREGARD_CATEGORY),
+    [expenses]
+  );
+
   // Quanto já foi categorizado (confirmado no Realizado) de cada cartão,
   // dentro do ciclo de fatura que ainda está em aberto — dá o panorama do
   // "já categorizei X desse cartão" enquanto a fatura ainda não fechou.
@@ -848,7 +865,7 @@ export default function FinancasApp() {
     return creditCards.map((card) => {
       const closeDay = cardCloseDays[card.id] || 3;
       const openCycleKey = cycleMonthKeyFor(today, closeDay);
-      const total = expenses
+      const total = activeExpenses
         .filter(
           (e) =>
             e.source === "cartao" &&
@@ -862,7 +879,7 @@ export default function FinancasApp() {
         total,
       };
     });
-  }, [creditCards, cardCloseDays, expenses]);
+  }, [creditCards, cardCloseDays, activeExpenses]);
 
   return (
     <div
@@ -915,7 +932,7 @@ export default function FinancasApp() {
 
           {tab === "fluxo" && (
             <FluxoView
-              expenses={expenses}
+              expenses={activeExpenses}
               recurring={recurring}
               forecasts={forecasts}
               cardAutoForecasts={cardAutoForecasts}
@@ -1367,6 +1384,7 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
                 gap: 10,
                 padding: "12px 14px",
                 borderBottom: i === sorted.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                opacity: e.category === DISREGARD_CATEGORY ? 0.5 : 1,
               }}
             >
               <div style={{ fontSize: 16, width: 22, textAlign: "center", color: MUTED }}>
@@ -1390,6 +1408,23 @@ function RealizadoView({ expenses, pendingTotal, pendingCount, onReviewPending, 
                       }}
                     >
                       Cartão
+                    </span>
+                  )}
+                  {e.category === DISREGARD_CATEGORY && (
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontSize: 9.5,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                        color: CORAL,
+                        border: `1px solid ${CORAL}`,
+                        borderRadius: 4,
+                        padding: "1px 5px",
+                      }}
+                    >
+                      Ignorado nas outras abas
                     </span>
                   )}
                 </div>
