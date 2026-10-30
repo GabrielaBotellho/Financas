@@ -197,6 +197,10 @@ function weekdayAbbrev(dateISO) {
 // Uma regra recorrente vale no dia D de cada mês — em meses mais curtos que
 // D (ex: regra no dia 31, mês de fevereiro), cai no último dia do mês.
 function isRecurringDue(rule, dateISO) {
+  // Uma regra com data de início só passa a valer dali pra frente — ex:
+  // uma previsão de salário que só começa em janeiro de 2027 não deve
+  // aparecer em nenhum dia 6 antes disso.
+  if (rule.startDate && dateISO < rule.startDate) return false;
   const d = new Date(dateISO + "T00:00:00");
   const day = d.getDate();
   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
@@ -1578,6 +1582,7 @@ function PrevistoView({
   const [newRecCategory, setNewRecCategory] = useState(CATEGORY_LIST[0]);
   const [newRecAmount, setNewRecAmount] = useState("");
   const [newRecDay, setNewRecDay] = useState("5");
+  const [newRecStartDate, setNewRecStartDate] = useState("");
   const [newRecNote, setNewRecNote] = useState("");
 
   const [newFcType, setNewFcType] = useState("expense");
@@ -1602,7 +1607,14 @@ function PrevistoView({
 
   const startEditRecurring = (r) => {
     setEditingRecurringId(r.id);
-    setEditRecDraft({ type: r.type, category: r.category, amount: String(r.amount), dayOfMonth: String(r.dayOfMonth), note: r.note || "" });
+    setEditRecDraft({
+      type: r.type,
+      category: r.category,
+      amount: String(r.amount),
+      dayOfMonth: String(r.dayOfMonth),
+      startDate: r.startDate || "",
+      note: r.note || "",
+    });
   };
   const cancelEditRecurring = () => {
     setEditingRecurringId(null);
@@ -1615,6 +1627,7 @@ function PrevistoView({
       category: editRecDraft.category,
       amount: Number(editRecDraft.amount),
       dayOfMonth: Math.min(31, Math.max(1, Number(editRecDraft.dayOfMonth) || 1)),
+      startDate: editRecDraft.startDate || null,
       note: editRecDraft.note.trim(),
     });
     cancelEditRecurring();
@@ -1647,10 +1660,12 @@ function PrevistoView({
       category: newRecCategory,
       amount: Number(newRecAmount),
       dayOfMonth: Math.min(31, Math.max(1, Number(newRecDay) || 1)),
+      startDate: newRecStartDate || null,
       note: newRecNote.trim(),
       active: true,
     });
     setNewRecAmount("");
+    setNewRecStartDate("");
     setNewRecNote("");
   };
 
@@ -1751,6 +1766,14 @@ function PrevistoView({
                     </div>
                   </div>
 
+                  <label style={fieldLabel}>Começa em (opcional)</label>
+                  <input
+                    type="date"
+                    value={editRecDraft.startDate}
+                    onChange={(e) => setEditRecDraft((d) => ({ ...d, startDate: e.target.value }))}
+                    style={fieldInput}
+                  />
+
                   <label style={fieldLabel}>Nota (opcional)</label>
                   <input
                     type="text"
@@ -1805,6 +1828,11 @@ function PrevistoView({
                     {r.category}
                     {r.note ? ` · ${r.note}` : ""}
                   </div>
+                  {r.startDate && (
+                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: BRASS, marginTop: 1 }}>
+                      a partir de {new Date(r.startDate + "T00:00:00").toLocaleDateString("pt-BR")}
+                    </div>
+                  )}
                   <button
                     onClick={() => startEditRecurring(r)}
                     style={{ background: "none", border: "none", color: TEAL, fontSize: 11, textDecoration: "underline", padding: 0, marginTop: 2 }}
@@ -1875,6 +1903,19 @@ function PrevistoView({
                 style={{ ...fieldInput, fontFamily: "'IBM Plex Mono', monospace" }}
               />
             </div>
+          </div>
+
+          <label style={fieldLabel}>Começa em (opcional)</label>
+          <input
+            type="date"
+            value={newRecStartDate}
+            onChange={(e) => setNewRecStartDate(e.target.value)}
+            style={fieldInput}
+          />
+          <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>
+            Deixe em branco pra valer todo mês a partir de hoje. Preenche
+            quando essa previsão só deve começar numa data específica — ex:
+            um salário novo que só começa em janeiro.
           </div>
 
           <label style={fieldLabel}>Nota (opcional)</label>
