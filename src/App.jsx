@@ -84,6 +84,10 @@ function rebuildCategories(customCategories) {
   INCOME_CATEGORY_LIST = Object.keys(mergedIncome);
 }
 
+// Abreviações dos dias da semana usadas no seletor de recorrência semanal —
+// índice bate com Date#getDay() (0 = domingo ... 6 = sábado).
+const WEEKDAY_SHORT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
 // Tipos de lançamento na aba Investimentos — não têm orçamento nem período
 // de "gasto", só entram na conta de aportes/rendimento/resgates/acumulado.
 const INVESTMENT_TYPE_META = {
@@ -194,14 +198,22 @@ function weekdayAbbrev(dateISO) {
   return WEEKDAYS_PT[d.getDay()];
 }
 
-// Uma regra recorrente vale no dia D de cada mês — em meses mais curtos que
-// D (ex: regra no dia 31, mês de fevereiro), cai no último dia do mês.
+// Uma regra recorrente pode ser mensal (vale no dia D de cada mês — em
+// meses mais curtos que D, ex: regra no dia 31 num fevereiro, cai no
+// último dia do mês), semanal (vale em dias da semana específicos, ex:
+// toda segunda e quinta) ou diária (vale todo santo dia). Regras antigas
+// sem "frequency" salva continuam mensais, como sempre funcionaram.
 function isRecurringDue(rule, dateISO) {
   // Uma regra com data de início só passa a valer dali pra frente — ex:
   // uma previsão de salário que só começa em janeiro de 2027 não deve
   // aparecer em nenhum dia 6 antes disso.
   if (rule.startDate && dateISO < rule.startDate) return false;
   const d = new Date(dateISO + "T00:00:00");
+  const frequency = rule.frequency || "monthly";
+  if (frequency === "daily") return true;
+  if (frequency === "weekly") {
+    return Array.isArray(rule.weekdays) && rule.weekdays.includes(d.getDay());
+  }
   const day = d.getDate();
   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
   const targetDay = Math.min(Number(rule.dayOfMonth) || 1, lastDay);
@@ -1650,9 +1662,16 @@ function PrevistoView({
   const [newRecType, setNewRecType] = useState("expense");
   const [newRecCategory, setNewRecCategory] = useState(CATEGORY_LIST[0]);
   const [newRecAmount, setNewRecAmount] = useState("");
+  const [newRecFrequency, setNewRecFrequency] = useState("monthly");
   const [newRecDay, setNewRecDay] = useState("5");
+  const [newRecWeekdays, setNewRecWeekdays] = useState([]);
   const [newRecStartDate, setNewRecStartDate] = useState("");
   const [newRecNote, setNewRecNote] = useState("");
+  const toggleNewRecWeekday = (idx) => {
+    setNewRecWeekdays((prev) =>
+      prev.includes(idx) ? prev.filter((d) => d !== idx) : [...prev, idx].sort((a, b) => a - b)
+    );
+  };
 
   const [newFcType, setNewFcType] = useState("expense");
   const [newFcCategory, setNewFcCategory] = useState(CATEGORY_LIST[0]);
@@ -1697,7 +1716,9 @@ function PrevistoView({
       type: r.type,
       category: r.category,
       amount: String(r.amount),
-      dayOfMonth: String(r.dayOfMonth),
+      frequency: r.frequency || "monthly",
+      dayOfMonth: String(r.dayOfMonth || 1),
+      weekdays: r.weekdays || [],
       startDate: r.startDate || "",
       note: r.note || "",
     });
@@ -1706,13 +1727,22 @@ function PrevistoView({
     setEditingRecurringId(null);
     setEditRecDraft(null);
   };
+  const toggleEditRecWeekday = (idx) => {
+    setEditRecDraft((d) => ({
+      ...d,
+      weekdays: d.weekdays.includes(idx) ? d.weekdays.filter((w) => w !== idx) : [...d.weekdays, idx].sort((a, b) => a - b),
+    }));
+  };
   const saveEditRecurring = () => {
     if (!(Number(editRecDraft.amount) > 0)) return;
+    if (editRecDraft.frequency === "weekly" && editRecDraft.weekdays.length === 0) return;
     onUpdateRecurring(editingRecurringId, {
       type: editRecDraft.type,
       category: editRecDraft.category,
       amount: Number(editRecDraft.amount),
-      dayOfMonth: Math.min(31, Math.max(1, Number(editRecDraft.dayOfMonth) || 1)),
+      frequency: editRecDraft.frequency,
+      dayOfMonth: editRecDraft.frequency === "monthly" ? Math.min(31, Math.max(1, Number(editRecDraft.dayOfMonth) || 1)) : null,
+      weekdays: editRecDraft.frequency === "weekly" ? editRecDraft.weekdays : null,
       startDate: editRecDraft.startDate || null,
       note: editRecDraft.note.trim(),
     });
@@ -1749,16 +1779,20 @@ function PrevistoView({
 
   const handleAddRecurring = () => {
     if (!(Number(newRecAmount) > 0)) return;
+    if (newRecFrequency === "weekly" && newRecWeekdays.length === 0) return;
     onAddRecurring({
       type: newRecType,
       category: newRecCategory,
       amount: Number(newRecAmount),
-      dayOfMonth: Math.min(31, Math.max(1, Number(newRecDay) || 1)),
+      frequency: newRecFrequency,
+      dayOfMonth: newRecFrequency === "monthly" ? Math.min(31, Math.max(1, Number(newRecDay) || 1)) : null,
+      weekdays: newRecFrequency === "weekly" ? newRecWeekdays : null,
       startDate: newRecStartDate || null,
       note: newRecNote.trim(),
       active: true,
     });
     setNewRecAmount("");
+    setNewRecWeekdays([]);
     setNewRecStartDate("");
     setNewRecNote("");
   };
@@ -1779,7 +1813,14 @@ function PrevistoView({
     setNewFcCardId("");
   };
 
-  const sortedRecurring = [...recurring].sort((a, b) => a.dayOfMonth - b.dayOfMonth);
+  const FREQ_RANK = { daily: 0, weekly: 1, monthly: 2 };
+  const sortedRecurring = [...recurring].sort((a, b) => {
+    const ra = FREQ_RANK[a.frequency || "monthly"];
+    const rb = FREQ_RANK[b.frequency || "monthly"];
+    if (ra !== rb) return ra - rb;
+    if (ra === 2) return (a.dayOfMonth || 0) - (b.dayOfMonth || 0);
+    return 0;
+  });
   const sortedForecasts = [...forecasts].sort((a, b) => (a.date < b.date ? -1 : 1));
   const sortedCardForecasts = [...cardAutoForecasts].sort((a, b) => (a.date < b.date ? -1 : 1));
 
@@ -1806,13 +1847,72 @@ function PrevistoView({
     </div>
   );
 
+  const frequencyToggle = (value, onChange) => (
+    <div style={{ display: "flex", gap: 8 }}>
+      {[{ id: "monthly", label: "Mensal" }, { id: "weekly", label: "Semanal" }, { id: "daily", label: "Diária" }].map((opt) => (
+        <button
+          key={opt.id}
+          onClick={() => onChange(opt.id)}
+          style={{
+            flex: 1,
+            background: value === opt.id ? INK : "#F6F6F4",
+            color: value === opt.id ? CREAM_TEXT : INK,
+            border: `1px solid ${value === opt.id ? INK : PAPER_LINE}`,
+            borderRadius: 6,
+            padding: "8px",
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const weekdayPicker = (selected, onToggle) => (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {WEEKDAY_SHORT.map((label, idx) => {
+        const active = selected.includes(idx);
+        return (
+          <button
+            key={idx}
+            onClick={() => onToggle(idx)}
+            style={{
+              width: 42,
+              padding: "8px 0",
+              background: active ? INK : "#F6F6F4",
+              color: active ? CREAM_TEXT : INK,
+              border: `1px solid ${active ? INK : PAPER_LINE}`,
+              borderRadius: 6,
+              fontSize: 11.5,
+              fontWeight: 600,
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const recurringFrequencyLabel = (r) => {
+    const freq = r.frequency || "monthly";
+    if (freq === "daily") return "todo dia";
+    if (freq === "weekly") {
+      const days = (r.weekdays || []).slice().sort((a, b) => a - b).map((d) => WEEKDAY_SHORT[d]);
+      return days.length ? `toda ${days.join(", ")}` : "semanal";
+    }
+    return `dia ${r.dayOfMonth} de cada mês`;
+  };
+
   return (
     <div>
       <SectionLabel>Recorrentes</SectionLabel>
       {sortedRecurring.length === 0 ? (
         <div style={{ fontSize: 12.5, color: MUTED, marginBottom: 14 }}>
-          Nenhum lançamento recorrente ainda — ex: aluguel todo dia 5, salário
-          todo dia 1, transporte todo dia 10.
+          Nenhum lançamento recorrente ainda — ex: aluguel todo dia 5 (mensal),
+          academia toda segunda e quinta (semanal), café todo dia (diária).
         </div>
       ) : (
         <Card>
@@ -1837,6 +1937,9 @@ function PrevistoView({
                     ))}
                   </select>
 
+                  <label style={fieldLabel}>Frequência</label>
+                  {frequencyToggle(editRecDraft.frequency, (v) => setEditRecDraft((d) => ({ ...d, frequency: v })))}
+
                   <div style={{ display: "flex", gap: 10 }}>
                     <div style={{ flex: 1 }}>
                       <label style={fieldLabel}>Valor (R$)</label>
@@ -1848,19 +1951,28 @@ function PrevistoView({
                         style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
                       />
                     </div>
-                    <div style={{ width: 90 }}>
-                      <label style={fieldLabel}>Dia do mês</label>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min={1}
-                        max={31}
-                        value={editRecDraft.dayOfMonth}
-                        onChange={(e) => setEditRecDraft((d) => ({ ...d, dayOfMonth: e.target.value }))}
-                        style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
-                      />
-                    </div>
+                    {editRecDraft.frequency === "monthly" && (
+                      <div style={{ width: 90 }}>
+                        <label style={fieldLabel}>Dia do mês</label>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={31}
+                          value={editRecDraft.dayOfMonth}
+                          onChange={(e) => setEditRecDraft((d) => ({ ...d, dayOfMonth: e.target.value }))}
+                          style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
+                        />
+                      </div>
+                    )}
                   </div>
+
+                  {editRecDraft.frequency === "weekly" && (
+                    <>
+                      <label style={fieldLabel}>Dias da semana</label>
+                      {weekdayPicker(editRecDraft.weekdays, toggleEditRecWeekday)}
+                    </>
+                  )}
 
                   <label style={fieldLabel}>Começa em (opcional)</label>
                   <input
@@ -1887,7 +1999,7 @@ function PrevistoView({
                     </button>
                     <button
                       onClick={saveEditRecurring}
-                      disabled={!(Number(editRecDraft.amount) > 0)}
+                      disabled={!(Number(editRecDraft.amount) > 0) || (editRecDraft.frequency === "weekly" && editRecDraft.weekdays.length === 0)}
                       style={{
                         flex: 1,
                         background: Number(editRecDraft.amount) > 0 ? TEAL : PAPER_LINE,
@@ -1916,13 +2028,13 @@ function PrevistoView({
                   borderBottom: isLast ? "none" : `1px solid ${PAPER_LINE}`,
                 }}
               >
-                <div style={{ width: 38, textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 11, color: MUTED }}>
-                  dia {r.dayOfMonth}
-                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>
                     {r.category}
                     {r.note ? ` · ${r.note}` : ""}
+                  </div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>
+                    {recurringFrequencyLabel(r)}
                   </div>
                   {r.startDate && (
                     <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: BRASS, marginTop: 1 }}>
@@ -1975,6 +2087,9 @@ function PrevistoView({
             ))}
           </select>
 
+          <label style={fieldLabel}>Frequência</label>
+          {frequencyToggle(newRecFrequency, setNewRecFrequency)}
+
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}>
               <label style={fieldLabel}>Valor (R$)</label>
@@ -1987,19 +2102,28 @@ function PrevistoView({
                 style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
               />
             </div>
-            <div style={{ width: 90 }}>
-              <label style={fieldLabel}>Dia do mês</label>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={31}
-                value={newRecDay}
-                onChange={(e) => setNewRecDay(e.target.value)}
-                style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
-              />
-            </div>
+            {newRecFrequency === "monthly" && (
+              <div style={{ width: 90 }}>
+                <label style={fieldLabel}>Dia do mês</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={31}
+                  value={newRecDay}
+                  onChange={(e) => setNewRecDay(e.target.value)}
+                  style={{ ...fieldInput, fontFamily: "'Inter', sans-serif" }}
+                />
+              </div>
+            )}
           </div>
+
+          {newRecFrequency === "weekly" && (
+            <>
+              <label style={fieldLabel}>Dias da semana</label>
+              {weekdayPicker(newRecWeekdays, toggleNewRecWeekday)}
+            </>
+          )}
 
           <label style={fieldLabel}>Começa em (opcional)</label>
           <input
@@ -2009,9 +2133,9 @@ function PrevistoView({
             style={fieldInput}
           />
           <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>
-            Deixe em branco pra valer todo mês a partir de hoje. Preenche
-            quando essa previsão só deve começar numa data específica — ex:
-            um salário novo que só começa em janeiro.
+            Deixe em branco pra valer desde já. Preenche quando essa previsão
+            só deve começar numa data específica — ex: um salário novo que só
+            começa em janeiro.
           </div>
 
           <label style={fieldLabel}>Nota (opcional)</label>
@@ -2025,7 +2149,7 @@ function PrevistoView({
 
           <button
             onClick={handleAddRecurring}
-            disabled={!(Number(newRecAmount) > 0)}
+            disabled={!(Number(newRecAmount) > 0) || (newRecFrequency === "weekly" && newRecWeekdays.length === 0)}
             style={{
               marginTop: 14,
               width: "100%",
