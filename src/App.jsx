@@ -1196,6 +1196,16 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
     setLocalBalance(startingBalance ?? "");
   }, [startingBalance]);
 
+  const [expandedDays, setExpandedDays] = useState(() => new Set());
+  const toggleDay = (d) => {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d);
+      else next.add(d);
+      return next;
+    });
+  };
+
   const today = todayISO();
 
   const days = useMemo(() => {
@@ -1295,89 +1305,89 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
         const isFuture = d > today;
         const isToday = d === today;
         const items = isFuture ? forecastsByDay[d] || [] : realizedByDay[d] || [];
-        const balance = balances[d];
+        const balanceEnd = balances[d];
+        const dayDelta = isFuture ? cashDelta(items) : cashDelta(items, { excludeSource: "cartao" });
+        const balanceStart = balanceEnd - dayDelta;
         const hasItems = items.length > 0;
+        const isExpanded = expandedDays.has(d);
 
-        const dayTint = balance >= 0 ? BALANCE_POSITIVE_TINT : BALANCE_NEGATIVE_TINT;
+        const dayTint = balanceEnd >= 0 ? BALANCE_POSITIVE_TINT : BALANCE_NEGATIVE_TINT;
 
-        if (!hasItems && !isToday) {
-          return (
+        return (
+          <div key={d} style={{ marginBottom: 6 }}>
             <div
-              key={d}
+              onClick={hasItems ? () => toggleDay(d) : undefined}
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                padding: "6px 14px",
-                fontSize: 11.5,
-                color: MUTED,
-                fontFamily: "'Inter', sans-serif",
+                alignItems: "center",
+                padding: "10px 14px",
                 background: dayTint,
-                borderRadius: 6,
+                borderRadius: 8,
+                cursor: hasItems ? "pointer" : "default",
+                gap: 10,
               }}
             >
-              <span>{formatDayLabel(d)}</span>
-              <span>{fmtBRL(balance)}</span>
-            </div>
-          );
-        }
-
-        return (
-          <div key={d} style={{ marginBottom: 10 }}>
-            <Card background={dayTint}>
-              <div
+              <span style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                {hasItems && (
+                  <ChevronRight
+                    size={13}
+                    color={MUTED}
+                    style={{ transform: isExpanded ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}
+                  />
+                )}
+                {formatDayLabel(d)}
+                {isToday ? " · hoje" : ""}
+                {isFuture ? " · previsto" : ""}
+              </span>
+              <span
                 style={{
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: 12,
                   display: "flex",
-                  justifyContent: "space-between",
                   alignItems: "center",
-                  padding: "10px 14px",
-                  background: dayTint,
-                  borderBottom: hasItems ? `1px solid ${PAPER_LINE}` : "none",
+                  gap: 4,
+                  whiteSpace: "nowrap",
                 }}
               >
-                <span style={{ fontSize: 12.5, fontWeight: 600 }}>
-                  {formatDayLabel(d)}
-                  {isToday ? " · hoje" : ""}
-                  {isFuture ? " · previsto" : ""}
-                </span>
-                <span
-                  style={{
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: balance >= 0 ? TEAL : CORAL,
-                  }}
-                >
-                  {fmtBRL(balance)}
-                </span>
+                <span style={{ color: MUTED }}>{fmtBRL(balanceStart)}</span>
+                <span style={{ color: MUTED }}>→</span>
+                <span style={{ fontWeight: 600, color: balanceEnd >= 0 ? TEAL : CORAL }}>{fmtBRL(balanceEnd)}</span>
+              </span>
+            </div>
+            {hasItems && isExpanded && (
+              <div style={{ marginTop: 4 }}>
+                <Card background={dayTint}>
+                  {items.map((it, i) => (
+                    <div
+                      key={it.id || i}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 8,
+                        padding: "8px 14px",
+                        borderBottom: i === items.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
+                        opacity: it.source === "cartao" ? 0.6 : 1,
+                      }}
+                    >
+                      <span style={{ fontSize: 12.5 }}>{dayItemLabel(it)}</span>
+                      <span
+                        style={{
+                          fontFamily: "'Inter', sans-serif",
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          color: it.type === "income" ? TEAL : INK,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {it.type === "income" ? "+ " : "− "}
+                        {fmtBRL(it.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </Card>
               </div>
-              {items.map((it, i) => (
-                <div
-                  key={it.id || i}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    padding: "8px 14px",
-                    borderBottom: i === items.length - 1 ? "none" : `1px solid ${PAPER_LINE}`,
-                    opacity: it.source === "cartao" ? 0.6 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: 12.5 }}>{dayItemLabel(it)}</span>
-                  <span
-                    style={{
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      color: it.type === "income" ? TEAL : INK,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {it.type === "income" ? "+ " : "− "}
-                    {fmtBRL(it.amount)}
-                  </span>
-                </div>
-              ))}
-            </Card>
+            )}
           </div>
         );
       })}
