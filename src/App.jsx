@@ -232,10 +232,36 @@ function cycleMonthKeyFor(dateISO, closeDay) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// Dado um gasto futuro planejado pra cair num cartão de crédito (registrado
+// manualmente em Previsto), projeta em que data ele vai de fato pesar no
+// saldo: a data de pagamento da fatura do ciclo a que a compra pertence —
+// não a data da compra em si. Mesma regra de fechamento/vencimento usada no
+// cardAutoForecasts, só que a partir de uma data arbitrária em vez de "hoje".
+function estimateCardDueDate(card, purchaseDateISO, { closeDay, paymentDay }) {
+  const cycleKey = cycleMonthKeyFor(purchaseDateISO, closeDay);
+  const [y, m] = cycleKey.split("-").map(Number); // m aqui é 1-indexado
+  if (paymentDay) {
+    const d = new Date(y, m - 1, Math.min(paymentDay, 28));
+    return d.toISOString().slice(0, 10);
+  }
+  const bills = (card && card.bills) || [];
+  const offsets = bills
+    .filter((b) => b.billClosingDate && b.dueDate)
+    .map((b) => Math.round((new Date(b.dueDate) - new Date(b.billClosingDate)) / 86400000))
+    .filter((n) => n > 0 && n < 40);
+  const dueDayOffset = offsets.length
+    ? Math.round(offsets.reduce((a, b) => a + b, 0) / offsets.length)
+    : 7;
+  const closingDate = new Date(y, m - 1, closeDay);
+  const d = new Date(closingDate);
+  d.setDate(d.getDate() + dueDayOffset);
+  return d.toISOString().slice(0, 10);
+}
+
 function dayItemLabel(it) {
   if (it.source === "cartao-auto") return it.note || it.category;
   const base = it.note ? `${it.category} · ${it.note}` : it.category;
-  if (it.source === "cartao") return `${base} · cartão`;
+  if (it.source === "cartao" || it.cardId) return `${base} · cartão`;
   return base;
 }
 
@@ -1020,6 +1046,9 @@ export default function FinancasApp() {
               cardAutoForecasts={cardAutoForecasts}
               startingBalance={startingBalance}
               onSaveStartingBalance={saveStartingBalance}
+              creditCards={creditCards}
+              cardCloseDays={cardCloseDays}
+              cardPaymentDay={cardPaymentDay}
             />
           )}
 
@@ -1050,6 +1079,8 @@ export default function FinancasApp() {
               onUndismissCardTransaction={undismissCardTransaction}
               hasBank={bankItems.length > 0}
               creditCards={creditCards}
+              cardCloseDays={cardCloseDays}
+              cardPaymentDay={cardPaymentDay}
               ccStatus={ccStatus}
               onFetchCards={fetchCreditCards}
             />
@@ -1194,7 +1225,17 @@ const TAB_TITLES = {
 /* Fluxo de Caixa view — panorama diário, Realizado (passado/hoje) x   */
 /* Previsto (futuro), com saldo projetado dia a dia                    */
 /* ------------------------------------------------------------------ */
-function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, startingBalance, onSaveStartingBalance }) {
+function FluxoView({
+  expenses,
+  recurring,
+  forecasts,
+  cardAutoForecasts,
+  startingBalance,
+  onSaveStartingBalance,
+  creditCards,
+  cardCloseDays,
+  cardPaymentDay,
+}) {
   const [localBalance, setLocalBalance] = useState(startingBalance ?? "");
   useEffect(() => {
     setLocalBalance(startingBalance ?? "");
@@ -1232,6 +1273,20 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
     return map;
   }, [expenses]);
 
+  // Lançamento pontual planejado pra um cartão de crédito: o que importa
+  // pro saldo não é a data da compra, e sim a data em que a fatura daquele
+  // ciclo é paga — projeta aqui, uma vez, pra cada lançamento do tipo.
+  const forecastsWithEffectiveDate = useMemo(() => {
+    return forecasts.map((f) => {
+      if (!f.cardId) return f;
+      const card = creditCards.find((c) => c.id === f.cardId);
+      const closeDay = cardCloseDays[f.cardId] || 3;
+      const paymentDay = Number(cardPaymentDay[f.cardId]) || null;
+      const effectiveDate = estimateCardDueDate(card, f.date, { closeDay, paymentDay });
+      return { ...f, effectiveDate };
+    });
+  }, [forecasts, creditCards, cardCloseDays, cardPaymentDay]);
+
   const forecastsByDay = useMemo(() => {
     const map = {};
     days.forEach((d) => {
@@ -1241,8 +1296,8 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
         if (r.active === false) return;
         if (isRecurringDue(r, d)) items.push(r);
       });
-      forecasts.forEach((f) => {
-        if (f.date === d) items.push(f);
+      forecastsWithEffectiveDate.forEach((f) => {
+        if ((f.effectiveDate || f.date) === d) items.push(f);
       });
       cardAutoForecasts.forEach((f) => {
         if (f.date === d) items.push(f);
@@ -1250,7 +1305,7 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
       if (items.length) map[d] = items;
     });
     return map;
-  }, [days, today, recurring, forecasts, cardAutoForecasts]);
+  }, [days, today, recurring, forecastsWithEffectiveDate, cardAutoForecasts]);
 
   const balances = useMemo(() => {
     const map = {};
@@ -1587,6 +1642,8 @@ function PrevistoView({
   onUndismissCardTransaction,
   hasBank,
   creditCards,
+  cardCloseDays,
+  cardPaymentDay,
   ccStatus,
   onFetchCards,
 }) {
@@ -1602,6 +1659,23 @@ function PrevistoView({
   const [newFcAmount, setNewFcAmount] = useState("");
   const [newFcDate, setNewFcDate] = useState(todayISO());
   const [newFcNote, setNewFcNote] = useState("");
+  const [newFcCardId, setNewFcCardId] = useState("");
+
+  // Projeta a data em que uma compra planejada num cartão vai de fato cair
+  // na fatura, pra mostrar essa previsão ao lado do form (mesma lógica do
+  // Fluxo) — ajuda a conferir antes de salvar.
+  const projectedCardDueDate = (cardId, purchaseDate) => {
+    if (!cardId || !purchaseDate) return null;
+    const card = creditCards.find((c) => c.id === cardId);
+    const closeDay = cardCloseDays[cardId] || 3;
+    const paymentDay = Number(cardPaymentDay[cardId]) || null;
+    return estimateCardDueDate(card, purchaseDate, { closeDay, paymentDay });
+  };
+  const cardLabel = (cardId) => {
+    const card = creditCards.find((c) => c.id === cardId);
+    if (!card) return "";
+    return `${card.name}${card.bankLabel ? " · " + card.bankLabel : ""}`;
+  };
 
   // Qual fatura prevista está com a lista de lançamentos somados aberta —
   // pra conferir o cálculo contra o app do banco, lançamento por lançamento.
@@ -1647,7 +1721,14 @@ function PrevistoView({
 
   const startEditForecast = (f) => {
     setEditingForecastId(f.id);
-    setEditFcDraft({ type: f.type, category: f.category, amount: String(f.amount), date: f.date, note: f.note || "" });
+    setEditFcDraft({
+      type: f.type,
+      category: f.category,
+      amount: String(f.amount),
+      date: f.date,
+      note: f.note || "",
+      cardId: f.cardId || "",
+    });
   };
   const cancelEditForecast = () => {
     setEditingForecastId(null);
@@ -1661,6 +1742,7 @@ function PrevistoView({
       amount: Number(editFcDraft.amount),
       date: editFcDraft.date,
       note: editFcDraft.note.trim(),
+      cardId: editFcDraft.cardId || null,
     });
     cancelEditForecast();
   };
@@ -1690,9 +1772,11 @@ function PrevistoView({
       date: newFcDate,
       note: newFcNote.trim(),
       source: "manual",
+      cardId: newFcCardId || null,
     });
     setNewFcAmount("");
     setNewFcNote("");
+    setNewFcCardId("");
   };
 
   const sortedRecurring = [...recurring].sort((a, b) => a.dayOfMonth - b.dayOfMonth);
@@ -2010,6 +2094,31 @@ function PrevistoView({
                     </div>
                   </div>
 
+                  {editFcDraft.type === "expense" && creditCards.length > 0 && (
+                    <>
+                      <label style={fieldLabel}>Cartão de crédito (opcional)</label>
+                      <select
+                        value={editFcDraft.cardId}
+                        onChange={(e) => setEditFcDraft((d) => ({ ...d, cardId: e.target.value }))}
+                        style={fieldInput}
+                      >
+                        <option value="">Não é no cartão</option>
+                        {creditCards.map((c) => (
+                          <option key={c.id} value={c.id}>{cardLabel(c.id)}</option>
+                        ))}
+                      </select>
+                      {editFcDraft.cardId && (
+                        <div style={{ fontSize: 11, color: MUTED, marginTop: -8, marginBottom: 12 }}>
+                          Vai cair na fatura paga em{" "}
+                          {new Date(
+                            (projectedCardDueDate(editFcDraft.cardId, editFcDraft.date) || editFcDraft.date) + "T00:00:00"
+                          ).toLocaleDateString("pt-BR")}
+                          .
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   <label style={fieldLabel}>Nota (opcional)</label>
                   <input
                     type="text"
@@ -2060,9 +2169,12 @@ function PrevistoView({
                   <div style={{ fontSize: 13, fontWeight: 500 }}>
                     {f.category}
                     {f.note ? ` · ${f.note}` : ""}
+                    {f.cardId ? ` · ${cardLabel(f.cardId)}` : ""}
                   </div>
                   <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: MUTED, marginTop: 2 }}>
-                    {new Date(f.date + "T00:00:00").toLocaleDateString("pt-BR")}
+                    {f.cardId
+                      ? `compra em ${new Date(f.date + "T00:00:00").toLocaleDateString("pt-BR")} · cai na fatura paga em ${new Date((projectedCardDueDate(f.cardId, f.date) || f.date) + "T00:00:00").toLocaleDateString("pt-BR")}`
+                      : new Date(f.date + "T00:00:00").toLocaleDateString("pt-BR")}
                   </div>
                   <button
                     onClick={() => startEditForecast(f)}
@@ -2101,6 +2213,7 @@ function PrevistoView({
           {typeToggle(newFcType, (v) => {
             setNewFcType(v);
             setNewFcCategory(categoriesFor(v)[0]);
+            if (v !== "expense") setNewFcCardId("");
           })}
 
           <label style={fieldLabel}>Categoria</label>
@@ -2123,7 +2236,7 @@ function PrevistoView({
               />
             </div>
             <div style={{ width: 130 }}>
-              <label style={fieldLabel}>Data</label>
+              <label style={fieldLabel}>{newFcCardId ? "Data da compra" : "Data"}</label>
               <input
                 type="date"
                 value={newFcDate}
@@ -2132,6 +2245,23 @@ function PrevistoView({
               />
             </div>
           </div>
+
+          {newFcType === "expense" && creditCards.length > 0 && (
+            <>
+              <label style={fieldLabel}>Cartão de crédito (opcional)</label>
+              <select value={newFcCardId} onChange={(e) => setNewFcCardId(e.target.value)} style={fieldInput}>
+                <option value="">Não é no cartão</option>
+                {creditCards.map((c) => (
+                  <option key={c.id} value={c.id}>{cardLabel(c.id)}</option>
+                ))}
+              </select>
+              <div style={{ fontSize: 11, color: MUTED, marginTop: -8, marginBottom: 12 }}>
+                {newFcCardId
+                  ? <>Em vez da data da compra, vai aparecer no Fluxo na data em que a fatura é paga: {new Date((projectedCardDueDate(newFcCardId, newFcDate) || newFcDate) + "T00:00:00").toLocaleDateString("pt-BR")}.</>
+                  : "Se marcar um cartão, a previsão só pesa no saldo na data em que a fatura daquele ciclo é paga — não na data da compra."}
+              </div>
+            </>
+          )}
 
           <label style={fieldLabel}>Nota (opcional)</label>
           <input
