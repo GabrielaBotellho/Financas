@@ -261,6 +261,10 @@ function Card({ children, background = "#F6F6F4" }) {
 // (verde claro) ou negativo (vermelho claro).
 const BALANCE_POSITIVE_TINT = "#EAF4EF";
 const BALANCE_NEGATIVE_TINT = "#FBEAE8";
+// Mesmas cores, puxadas um pouco pro cinza — usadas nos dias passados pra
+// diferenciar visualmente do que é hoje em diante.
+const BALANCE_POSITIVE_TINT_PAST = "#ECEEEC";
+const BALANCE_NEGATIVE_TINT_PAST = "#F0EBEA";
 
 function SectionLabel({ children, style }) {
   return (
@@ -1311,7 +1315,10 @@ function FluxoView({ expenses, recurring, forecasts, cardAutoForecasts, starting
         const hasItems = items.length > 0;
         const isExpanded = expandedDays.has(d);
 
-        const dayTint = balanceEnd >= 0 ? BALANCE_POSITIVE_TINT : BALANCE_NEGATIVE_TINT;
+        const isPast = d < today;
+        const dayTint = isPast
+          ? (balanceEnd >= 0 ? BALANCE_POSITIVE_TINT_PAST : BALANCE_NEGATIVE_TINT_PAST)
+          : (balanceEnd >= 0 ? BALANCE_POSITIVE_TINT : BALANCE_NEGATIVE_TINT);
 
         return (
           <div key={d} style={{ marginBottom: 6 }}>
